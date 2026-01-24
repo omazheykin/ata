@@ -1,0 +1,147 @@
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Serialization;
+using ArbitrageApi.Models;
+using ArbitrageApi.Services.Exchanges.Coinbase;
+
+namespace ArbitrageApi.Services.Exchanges;
+
+public abstract class CoinbaseBaseState : IExchangeState
+{
+    protected readonly HttpClient HttpClient;
+    protected readonly ILogger Logger;
+    protected readonly string ApiKey;
+    protected readonly string ApiSecret;
+    protected readonly string BaseUrl;
+    protected readonly string ExchangeName = "Coinbase";
+
+    protected Dictionary<string, string> SymbolMapping = new()
+    {
+        { "BTCUSDT", "BTC-USD" },
+        { "ETHUSDT", "ETH-USD" },
+        { "BNBUSDT", "BNB-USD" },
+        { "SOLUSDT", "SOL-USD" },
+        { "XRPUSDT", "XRP-USD" },
+        { "ADAUSDT", "ADA-USD" },
+        { "AVAXUSDT", "AVAX-USD" },
+        { "DOTUSDT", "DOT-USD" },
+        { "MATICUSDT", "MATIC-USD" },
+        { "LINKUSDT", "LINK-USD" }
+    };
+
+    protected CoinbaseBaseState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, string baseUrl)
+    {
+        HttpClient = httpClient;
+        Logger = logger;
+        ApiKey = apiKey;
+        ApiSecret = apiSecret;
+        BaseUrl = baseUrl;
+    }
+
+    public abstract Task<ExchangePrice?> GetPriceAsync(string symbol);
+
+    public virtual async Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols)
+    {
+        var prices = new Dictionary<string, ExchangePrice>();
+        foreach (var symbol in symbols)
+        {
+            var price = await GetPriceAsync(symbol);
+            if (price != null) prices[symbol] = price;
+            await Task.Delay(100);
+        }
+        return prices;
+    }
+
+    public abstract Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
+    public abstract Task<List<Balance>> GetBalancesAsync();
+
+    public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    {
+        try
+        {
+            var apiSymbol = SymbolMapping.TryGetValue(symbol, out var mapped) ? mapped : symbol;
+
+            Logger.LogInformation("Fetching order book for {Symbol} from Coinbase", apiSymbol);
+
+            var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+            var response = await cats.GetOrderBookAsync(apiSymbol, 100);
+
+            Logger.LogDebug("Order book fetched for {Symbol} from Coinbase", apiSymbol);
+
+            if (response == null) return null;
+
+            var bids = response.PriceBook.Bids.Take(limit)
+      .Select(b => (decimal.Parse(b.Price, System.Globalization.CultureInfo.InvariantCulture),
+                    decimal.Parse(b.Size, System.Globalization.CultureInfo.InvariantCulture)))
+      .ToList();
+
+            var asks = response.PriceBook.Asks.Take(limit)
+                .Select(a => (decimal.Parse(a.Price, System.Globalization.CultureInfo.InvariantCulture),
+                              decimal.Parse(a.Size, System.Globalization.CultureInfo.InvariantCulture)))
+                .ToList();
+
+            Logger.LogDebug("Asks processed for {Symbol} from Coinbase", apiSymbol);
+
+            return (bids, asks);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error fetching order book from Coinbase for {Symbol}", symbol);
+            return null;
+        }
+    }
+
+    public async Task UpdateSymbolMappingWithSupportedProductsAsync()
+    {
+        try
+        {
+            var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+            var products = await cats.GetProductsAsync();
+            Logger.LogInformation("Coinbase products fetched: {Count}", products.Count);
+
+            var supportedSymbols = new HashSet<string>(products.Select(p => p.ProductId));
+
+            SymbolMapping = SymbolMapping
+                .Where(kv => supportedSymbols.Contains(kv.Value))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+            Logger.LogInformation("Coinbase supported symbols updated: {Symbols}", string.Join(", ", SymbolMapping.Keys));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error updating Coinbase supported symbols");
+        }
+    }
+
+    protected string Sign(string timestamp, string method, string requestPath, string body, bool isBase64Secret)
+    {
+        var message = timestamp + method + requestPath + body;
+        byte[] secretBytes;
+        try
+        {
+            secretBytes = isBase64Secret ? Convert.FromBase64String(ApiSecret) : Encoding.UTF8.GetBytes(ApiSecret);
+        }
+        catch
+        {
+            secretBytes = Encoding.UTF8.GetBytes(ApiSecret);
+        }
+
+        using var hmac = new HMACSHA256(secretBytes);
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+        return Convert.ToBase64String(hash);
+    }
+
+    // Order placement methods - to be implemented by derived classes
+    public abstract Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity);
+    public abstract Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity);
+    public abstract Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price);
+    public abstract Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price);
+
+    // Order management methods - to be implemented by derived classes
+    public abstract Task<OrderInfo> GetOrderStatusAsync(string orderId);
+    public abstract Task<bool> CancelOrderAsync(string orderId);
+
+    // Sandbox management
+    public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
+}
