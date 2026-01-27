@@ -13,6 +13,14 @@ public class BinanceSandboxState : BinanceBaseState
         _balances["USD"] = 10000m;
         _balances["BTC"] = 0.5m;
         _balances["ETH"] = 5.0m;
+        _balances["BNB"] = 50.0m;
+        _balances["SOL"] = 100.0m;
+        _balances["XRP"] = 5000.0m;
+        _balances["ADA"] = 10000.0m;
+        _balances["AVAX"] = 100.0m;
+        _balances["DOT"] = 500.0m;
+        _balances["MATIC"] = 5000.0m;
+        _balances["LINK"] = 200.0m;
     }
 
     public override Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
@@ -53,22 +61,25 @@ public class BinanceSandboxState : BinanceBaseState
             var priceInfo = await GetPriceAsync(symbol);
             var currentPrice = price ?? priceInfo?.Price ?? 0m;
 
+            // Robust asset parsing
+            var asset = symbol.Replace("USDT", "").Replace("USD", "");
+
             if (side == OrderSide.Buy)
             {
                 var totalCost = quantity * currentPrice;
                 if (!_balances.TryGetValue("USD", out var usdBalance) || usdBalance < totalCost)
                 {
+                    Logger.LogWarning("❌ SANDBOX: Insufficient USD balance for {Symbol} buy. Need {Cost}, have {Have}", symbol, totalCost, usdBalance);
                     return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = "Insufficient USD balance" };
                 }
                 _balances["USD"] -= totalCost;
-                var asset = symbol.Replace("USDT", "").Replace("USD", "");
                 _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
             }
             else
             {
-                var asset = symbol.Replace("USDT", "").Replace("USD", "");
                 if (!_balances.TryGetValue(asset, out var assetBalance) || assetBalance < quantity)
                 {
+                    Logger.LogWarning("❌ SANDBOX: Insufficient {Asset} balance for {Symbol} sell. Need {Qty}, have {Have}", asset, symbol, quantity, assetBalance);
                     return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = $"Insufficient {asset} balance" };
                 }
                 _balances[asset] -= quantity;
@@ -106,6 +117,39 @@ public class BinanceSandboxState : BinanceBaseState
         }
     }
     
+    public override Task<ExchangePrice?> GetPriceAsync(string symbol)
+    {
+        // FULL ISOLATION: Return simulated price immediately without network calls
+        return Task.FromResult(GetSimulatedPrice(symbol));
+    }
+
+    private ExchangePrice? GetSimulatedPrice(string symbol)
+    {
+        // Fallback to a reasonable simulated price if the testnet is down
+        decimal price = symbol switch
+        {
+            "BTCUSDT" => 50000m,
+            "ETHUSDT" => 2500m,
+            "BNBUSDT" => 300m,
+            "SOLUSDT" => 100m,
+            "XRPUSDT" => 0.5m,
+            "ADAUSDT" => 0.5m,
+            "AVAXUSDT" => 35m,
+            "DOTUSDT" => 7m,
+            "MATICUSDT" => 0.8m,
+            "LINKUSDT" => 15m,
+            _ => 10m
+        };
+
+        return new ExchangePrice
+        {
+            Exchange = ExchangeName,
+            Symbol = symbol,
+            Price = price,
+            Timestamp = DateTime.UtcNow
+        };
+    }
+
     public override Task<OrderInfo> GetOrderStatusAsync(string orderId)
     {
         return Task.FromResult(new OrderInfo
@@ -121,6 +165,16 @@ public class BinanceSandboxState : BinanceBaseState
         });
     }
     
+    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    {
+        Logger.LogInformation("🎮 SANDBOX: Providing simulated order book for {Symbol}", symbol);
+        
+        var priceInfo = await GetPriceAsync(symbol);
+        var midPrice = priceInfo?.Price ?? 50000m; // Fallback if price fetch fails
+
+        return GetSimulatedOrderBook(midPrice, limit);
+    }
+
     public override Task<bool> CancelOrderAsync(string orderId)
     {
         return Task.FromResult(true);

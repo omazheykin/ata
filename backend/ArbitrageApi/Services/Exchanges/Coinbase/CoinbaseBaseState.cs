@@ -92,6 +92,30 @@ public abstract class CoinbaseBaseState : IExchangeState
         }
     }
 
+    protected (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks) GetSimulatedOrderBook(decimal midPrice, int limit = 20)
+    {
+        var bids = new List<(decimal Price, decimal Quantity)>();
+        var asks = new List<(decimal Price, decimal Quantity)>();
+
+        var random = new Random();
+        var spread = midPrice * 0.001m; // 0.1% spread
+
+        for (int i = 0; i < limit; i++)
+        {
+            // Bids (Buy orders, below mid price)
+            var bidPrice = midPrice - (spread / 2) - (i * midPrice * 0.0005m);
+            var bidQty = (decimal)(random.NextDouble() * 2.0 + 0.1);
+            bids.Add((Math.Round(bidPrice, 8), Math.Round(bidQty, 4)));
+
+            // Asks (Sell orders, above mid price)
+            var askPrice = midPrice + (spread / 2) + (i * midPrice * 0.0005m);
+            var askQty = (decimal)(random.NextDouble() * 2.0 + 0.1);
+            asks.Add((Math.Round(askPrice, 8), Math.Round(askQty, 4)));
+        }
+
+        return (bids, asks);
+    }
+
     public async Task UpdateSymbolMappingWithSupportedProductsAsync()
     {
         try

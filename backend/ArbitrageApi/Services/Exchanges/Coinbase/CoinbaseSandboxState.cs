@@ -15,31 +15,47 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         _balances["USD"] = 10000m;
         _balances["BTC"] = 0.5m;
         _balances["ETH"] = 5.0m;
+        _balances["BNB"] = 50.0m;
+        _balances["SOL"] = 100.0m;
+        _balances["XRP"] = 5000.0m;
+        _balances["ADA"] = 10000.0m;
+        _balances["AVAX"] = 100.0m;
+        _balances["DOT"] = 500.0m;
+        _balances["MATIC"] = 5000.0m;
+        _balances["LINK"] = 200.0m;
     }
 
-    public override async Task<ExchangePrice?> GetPriceAsync(string symbol)
+    public override Task<ExchangePrice?> GetPriceAsync(string symbol)
     {
-        try
+        // FULL ISOLATION: Return simulated price immediately without network calls
+        return Task.FromResult(GetSimulatedPrice(symbol));
+    }
+
+    private ExchangePrice? GetSimulatedPrice(string symbol)
+    {
+        // Fallback to a reasonable simulated price if the sandbox API is down
+        decimal price = symbol switch
         {
-            if (!SymbolMapping.TryGetValue(symbol, out var coinbaseSymbol)) return null;
+            "BTCUSDT" => 50000m,
+            "ETHUSDT" => 2500m,
+            "BNBUSDT" => 300m,
+            "SOLUSDT" => 100m,
+            "XRPUSDT" => 0.5m,
+            "ADAUSDT" => 0.5m,
+            "AVAXUSDT" => 35m,
+            "DOTUSDT" => 7m,
+            "MATICUSDT" => 0.8m,
+            "LINKUSDT" => 15m,
+            _ => 10m
+        };
 
-            var response = await HttpClient.GetFromJsonAsync<CoinbaseTickerResponse>(
-                $"{BaseUrl}/products/{coinbaseSymbol}/ticker");
-
-            if (response == null || string.IsNullOrEmpty(response.Price)) return null;
-
-            return new ExchangePrice
-            {
-                Exchange = ExchangeName,
-                Symbol = symbol,
-                Price = decimal.Parse(response.Price, System.Globalization.CultureInfo.InvariantCulture),
-                Timestamp = DateTime.UtcNow
-            };
-        }
-        catch
+        return new ExchangePrice
         {
-            return null;
-        }
+            Exchange = ExchangeName,
+            Symbol = symbol,
+            Price = price,
+            Timestamp = DateTime.UtcNow
+        };
     }
 
     public override async Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
@@ -96,11 +112,12 @@ public class CoinbaseSandboxState : CoinbaseBaseState
 
         if (!_balances.TryGetValue("USD", out var usdBalance) || usdBalance < totalCost)
         {
+            Logger.LogWarning("❌ SANDBOX: Insufficient USD balance for {Symbol} buy. Need {Cost}, have {Have}", symbol, totalCost, usdBalance);
             return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = "Insufficient USD balance" };
         }
 
         _balances["USD"] -= totalCost;
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "");
+        var asset = symbol.Replace("-USD", "").Replace("USDT", "").Replace("USD", "");
         _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
 
         return new OrderResponse
@@ -122,10 +139,11 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         Logger.LogInformation("SANDBOX: Placing market sell order for {Symbol}, quantity {Quantity}", symbol, quantity);
         
         var orderId = $"SANDBOX_CB_SELL_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "");
+        var asset = symbol.Replace("-USD", "").Replace("USDT", "").Replace("USD", "");
 
         if (!_balances.TryGetValue(asset, out var assetBalance) || assetBalance < quantity)
         {
+            Logger.LogWarning("❌ SANDBOX: Insufficient {Asset} balance for {Symbol} sell. Need {Qty}, have {Have}", asset, symbol, quantity, assetBalance);
             return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = $"Insufficient {asset} balance" };
         }
 
@@ -219,6 +237,16 @@ public class CoinbaseSandboxState : CoinbaseBaseState
             ExecutedQuantity = 1.0m,
             Timestamp = DateTime.UtcNow
         };
+    }
+
+    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    {
+        Logger.LogInformation("🎮 SANDBOX: Providing simulated order book for {Symbol}", symbol);
+        
+        var priceInfo = await GetPriceAsync(symbol);
+        var midPrice = priceInfo?.Price ?? 50000m; // Fallback if price fetch fails
+
+        return GetSimulatedOrderBook(midPrice, limit);
     }
 
     public override async Task<bool> CancelOrderAsync(string orderId)

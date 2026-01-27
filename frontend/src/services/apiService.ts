@@ -52,6 +52,16 @@ export const apiService = {
         return response.data;
     },
 
+    async getExecutionStrategy(): Promise<{ strategy: string }> {
+        const response = await apiClient.get<{ strategy: string }>('/trade/strategy');
+        return response.data;
+    },
+
+    async setExecutionStrategy(strategy: string): Promise<{ strategy: string }> {
+        const response = await apiClient.post<{ strategy: string }>(`/trade/strategy?strategy=${strategy}`);
+        return response.data;
+    },
+
     async getSandboxMode(): Promise<{ enabled: boolean }> {
         const response = await apiClient.get<{ enabled: boolean }>('/settings/sandbox');
         return response.data;

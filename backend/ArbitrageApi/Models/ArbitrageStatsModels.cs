@@ -1,0 +1,48 @@
+namespace ArbitrageApi.Models;
+
+public class StatsSummary
+{
+    public Dictionary<string, PairStats> Pairs { get; set; } = new();
+    public Dictionary<int, HourStats> Hours { get; set; } = new();
+    public Dictionary<string, DayStats> Days { get; set; } = new();
+    public decimal GlobalVolatilityScore { get; set; }
+    public Dictionary<string, int> DirectionDistribution { get; set; } = new();
+    public double AvgSeriesDuration { get; set; }
+}
+
+public class PairStats
+{
+    public int Count { get; set; }
+    public decimal AvgSpread { get; set; }
+    public decimal MaxSpread { get; set; }
+}
+
+public class HourStats
+{
+    public int Count { get; set; }
+    public decimal AvgSpread { get; set; }
+    public decimal MaxSpread { get; set; }
+    public decimal AvgDepth { get; set; }
+}
+
+public class DayStats
+{
+    public int Count { get; set; }
+    public decimal AvgSpread { get; set; }
+}
+
+public class HourDetail
+{
+    public double AvgOpportunitiesPerHour { get; set; }
+    public decimal AvgSpread { get; set; }
+    public decimal AvgDepth { get; set; }
+    public string DirectionBias { get; set; } = string.Empty;
+    public decimal VolatilityScore { get; set; }
+    public string Zone { get; set; } = string.Empty;
+}
+
+public class StatsResponse
+{
+    public StatsSummary Summary { get; set; } = new();
+    public Dictionary<string, Dictionary<string, HourDetail>> Calendar { get; set; } = new();
+}

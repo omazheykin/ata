@@ -2,13 +2,16 @@ using ArbitrageApi.Models;
 using ArbitrageApi.Services.Exchanges;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Channels;
+using Microsoft.AspNetCore.SignalR;
 
 namespace ArbitrageApi.Services;
 
-public class TradeService
+public class TradeService : BackgroundService
 {
     private readonly ILogger<TradeService> _logger;
     private readonly List<IExchangeClient> _exchangeClients;
@@ -17,25 +20,57 @@ public class TradeService
     private decimal _minProfitThreshold = 0.5m; // 0.5% default
     private ExecutionStrategy _strategy = ExecutionStrategy.Sequential;
     private decimal _maxSlippagePercentage = 0.2m; // 0.2% default
+    private readonly Channel<ArbitrageOpportunity> _tradeChannel;
 
-    public TradeService(ILogger<TradeService> logger, IEnumerable<IExchangeClient> exchangeClients, IConfiguration configuration)
+    private readonly StatePersistenceService _persistenceService;
+    private readonly Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> _hubContext;
+
+    public TradeService(
+        ILogger<TradeService> logger, 
+        IEnumerable<IExchangeClient> exchangeClients, 
+        IConfiguration configuration, 
+        StatePersistenceService persistenceService,
+        Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> hubContext)
     {
         _logger = logger;
         _exchangeClients = exchangeClients.ToList();
+        _persistenceService = persistenceService;
+        _hubContext = hubContext;
+        _tradeChannel = Channel.CreateUnbounded<ArbitrageOpportunity>();
         
-        // Load threshold from configuration if available
-        var configThreshold = configuration.GetValue<decimal?>("Trading:MinProfitThreshold");
-        if (configThreshold.HasValue)
-        {
-            _minProfitThreshold = configThreshold.Value;
-            _logger.LogInformation("Loaded Min Profit Threshold from config: {Threshold}%", _minProfitThreshold);
-        }
+        // Load state from persistence
+        var state = _persistenceService.GetState();
+        _isAutoTradeEnabled = state.IsAutoTradeEnabled;
+        _minProfitThreshold = state.MinProfitThreshold;
+        _logger.LogInformation("Loaded state: AutoTrade={AutoTrade}, MinProfit={MinProfit}%", _isAutoTradeEnabled, _minProfitThreshold);
 
         var configStrategy = configuration.GetValue<string>("Trading:ExecutionStrategy");
         if (!string.IsNullOrEmpty(configStrategy) && Enum.TryParse<ExecutionStrategy>(configStrategy, true, out var strategy))
         {
             _strategy = strategy;
             _logger.LogInformation("Loaded Execution Strategy from config: {Strategy}", _strategy);
+        }
+    }
+
+    public async ValueTask QueueTradeAsync(ArbitrageOpportunity opportunity)
+    {
+        await _tradeChannel.Writer.WriteAsync(opportunity);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("🚀 Trade Service background worker started");
+
+        await foreach (var opportunity in _tradeChannel.Reader.ReadAllAsync(stoppingToken))
+        {
+            try
+            {
+                await ExecuteTradeAsync(opportunity);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing trade from channel for {Symbol}", opportunity.Symbol);
+            }
         }
     }
 
@@ -48,12 +83,20 @@ public class TradeService
     {
         _isAutoTradeEnabled = enabled;
         _logger.LogInformation("Auto-Trade mode {Status}", enabled ? "ENABLED" : "DISABLED");
+        
+        var state = _persistenceService.GetState();
+        state.IsAutoTradeEnabled = enabled;
+        _persistenceService.SaveState(state);
     }
 
     public void SetMinProfitThreshold(decimal threshold)
     {
         _minProfitThreshold = threshold;
         _logger.LogInformation("Min Profit Threshold set to {Threshold}%", threshold);
+
+        var state = _persistenceService.GetState();
+        state.MinProfitThreshold = threshold;
+        _persistenceService.SaveState(state);
     }
 
     public void SetExecutionStrategy(ExecutionStrategy strategy)
@@ -78,8 +121,8 @@ public class TradeService
             }
 
             // 1. Slippage Check
-            var currentBuyPrice = await buyClient.GetPriceAsync(opportunity.Asset + "USD"); // Simplified symbol
-            var currentSellPrice = await sellClient.GetPriceAsync(opportunity.Asset + "USD");
+            var currentBuyPrice = await buyClient.GetPriceAsync(opportunity.Symbol);
+            var currentSellPrice = await sellClient.GetPriceAsync(opportunity.Symbol);
 
             if (currentBuyPrice != null && currentSellPrice != null)
             {
@@ -89,6 +132,11 @@ public class TradeService
                     _logger.LogWarning("⚠️ Trade aborted: Slippage exceeded. Current spread {Spread:N2}% < Threshold {Threshold}%", currentSpread, _minProfitThreshold);
                     return false;
                 }
+                _logger.LogInformation("✅ Slippage check passed: Current spread {Spread:N2}% >= Threshold {Threshold}%", currentSpread, _minProfitThreshold);
+            }
+            else
+            {
+                _logger.LogWarning("⚠️ Slippage check SKIPPED: Could not fetch current prices for {Symbol}. Proceeding with caution...", opportunity.Symbol);
             }
 
             if (_strategy == ExecutionStrategy.Sequential)
@@ -102,7 +150,7 @@ public class TradeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute trade");
+            _logger.LogError(ex, "Failed to execute trade for {Symbol}", opportunity.Symbol);
             return false;
         }
     }
@@ -110,26 +158,26 @@ public class TradeService
     private async Task<bool> ExecuteSequentialAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient)
     {
         // 1. Place Buy Order
-        var buyResponse = await buyClient.PlaceMarketBuyOrderAsync(opportunity.Asset + "USD", opportunity.Volume);
+        var buyResponse = await buyClient.PlaceMarketBuyOrderAsync(opportunity.Symbol, opportunity.Volume);
         
         if (buyResponse.Status != OrderStatus.Filled && buyResponse.Status != OrderStatus.PartiallyFilled)
         {
-            _logger.LogError("❌ Sequential Trade Failed: Buy order failed on {Exchange}. Error: {Error}", opportunity.BuyExchange, buyResponse.ErrorMessage);
+            _logger.LogError("❌ Sequential Trade Failed: Buy order failed on {Exchange} for {Symbol}. Error: {Error}", opportunity.BuyExchange, opportunity.Symbol, buyResponse.ErrorMessage);
             RecordTransaction(opportunity, buyResponse, null, "Failed");
             return false;
         }
 
-        _logger.LogInformation("✅ Buy order filled on {Exchange}. Placing sell order on {SellEx}...", opportunity.BuyExchange, opportunity.SellExchange);
+        _logger.LogInformation("✅ Buy order filled on {Exchange} for {Symbol}. Placing sell order on {SellEx}...", opportunity.BuyExchange, opportunity.Symbol, opportunity.SellExchange);
 
         // 2. Place Sell Order
-        var sellResponse = await sellClient.PlaceMarketSellOrderAsync(opportunity.Asset + "USD", buyResponse.ExecutedQuantity);
+        var sellResponse = await sellClient.PlaceMarketSellOrderAsync(opportunity.Symbol, buyResponse.ExecutedQuantity);
 
         if (sellResponse.Status != OrderStatus.Filled && sellResponse.Status != OrderStatus.PartiallyFilled)
         {
-            _logger.LogCritical("⚠️ CRITICAL: Buy order filled but Sell order FAILED on {Exchange}. Triggering UNDO logic...", opportunity.SellExchange);
+            _logger.LogCritical("⚠️ CRITICAL: Buy order filled but Sell order FAILED on {Exchange} for {Symbol}. Triggering UNDO logic...", opportunity.SellExchange, opportunity.Symbol);
             
             // 3. Recovery (Undo) Logic
-            var undoResponse = await buyClient.PlaceMarketSellOrderAsync(opportunity.Asset + "USD", buyResponse.ExecutedQuantity);
+            var undoResponse = await buyClient.PlaceMarketSellOrderAsync(opportunity.Symbol, buyResponse.ExecutedQuantity);
             
             var status = undoResponse.Status == OrderStatus.Filled ? "Recovered" : "One-Sided Fill (CRITICAL)";
             var transaction = RecordTransaction(opportunity, buyResponse, sellResponse, status);
@@ -139,7 +187,7 @@ public class TradeService
             return false;
         }
 
-        _logger.LogInformation("✅ Sequential trade completed successfully!");
+        _logger.LogInformation("✅ Sequential trade completed successfully for {Symbol}!", opportunity.Symbol);
         RecordTransaction(opportunity, buyResponse, sellResponse, "Success");
         return true;
     }
@@ -147,8 +195,8 @@ public class TradeService
     private async Task<bool> ExecuteConcurrentAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient)
     {
         // Place both orders simultaneously
-        var buyTask = buyClient.PlaceMarketBuyOrderAsync(opportunity.Asset + "USD", opportunity.Volume);
-        var sellTask = sellClient.PlaceMarketSellOrderAsync(opportunity.Asset + "USD", opportunity.Volume);
+        var buyTask = buyClient.PlaceMarketBuyOrderAsync(opportunity.Symbol, opportunity.Volume);
+        var sellTask = sellClient.PlaceMarketSellOrderAsync(opportunity.Symbol, opportunity.Volume);
 
         await Task.WhenAll(buyTask, sellTask);
 
@@ -160,7 +208,7 @@ public class TradeService
 
         if (buySuccess && sellSuccess)
         {
-            _logger.LogInformation("✅ Concurrent trade completed successfully!");
+            _logger.LogInformation("✅ Concurrent trade completed successfully for {Symbol}!", opportunity.Symbol);
             RecordTransaction(opportunity, buyResponse, sellResponse, "Success");
             return true;
         }
@@ -168,8 +216,8 @@ public class TradeService
         // Handle one-sided failures
         if (buySuccess && !sellSuccess)
         {
-            _logger.LogCritical("⚠️ Concurrent Trade One-Sided: Buy succeeded, Sell failed. Triggering UNDO on Buy exchange...");
-            var undoResponse = await buyClient.PlaceMarketSellOrderAsync(opportunity.Asset + "USD", buyResponse.ExecutedQuantity);
+            _logger.LogCritical("⚠️ Concurrent Trade One-Sided: Buy succeeded, Sell failed for {Symbol}. Triggering UNDO on Buy exchange...", opportunity.Symbol);
+            var undoResponse = await buyClient.PlaceMarketSellOrderAsync(opportunity.Symbol, buyResponse.ExecutedQuantity);
             var transaction = RecordTransaction(opportunity, buyResponse, sellResponse, "Recovered");
             transaction.IsRecovered = undoResponse.Status == OrderStatus.Filled;
             return false;
@@ -177,14 +225,14 @@ public class TradeService
         
         if (!buySuccess && sellSuccess)
         {
-            _logger.LogCritical("⚠️ Concurrent Trade One-Sided: Sell succeeded, Buy failed. Triggering UNDO on Sell exchange...");
-            var undoResponse = await sellClient.PlaceMarketBuyOrderAsync(opportunity.Asset + "USD", sellResponse.ExecutedQuantity);
+            _logger.LogCritical("⚠️ Concurrent Trade One-Sided: Sell succeeded, Buy failed for {Symbol}. Triggering UNDO on Sell exchange...", opportunity.Symbol);
+            var undoResponse = await sellClient.PlaceMarketBuyOrderAsync(opportunity.Symbol, sellResponse.ExecutedQuantity);
             var transaction = RecordTransaction(opportunity, buyResponse, sellResponse, "Recovered");
             transaction.IsRecovered = undoResponse.Status == OrderStatus.Filled;
             return false;
         }
 
-        _logger.LogError("❌ Concurrent Trade Failed: Both orders failed.");
+        _logger.LogError("❌ Concurrent Trade Failed: Both orders failed for {Symbol}.", opportunity.Symbol);
         RecordTransaction(opportunity, buyResponse, sellResponse, "Failed");
         return false;
     }
@@ -214,6 +262,9 @@ public class TradeService
 
         _transactions.Enqueue(transaction);
         while (_transactions.Count > 50) _transactions.TryDequeue(out _);
+        
+        // Broadcast to SignalR clients
+        _hubContext.Clients.All.SendAsync("ReceiveTransaction", transaction).ConfigureAwait(false);
         
         return transaction;
     }

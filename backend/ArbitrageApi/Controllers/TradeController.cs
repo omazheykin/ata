@@ -51,6 +51,19 @@ public class TradeController : ControllerBase
         });
     }
 
+    [HttpGet("strategy")]
+    public ActionResult GetStrategy()
+    {
+        return Ok(new { Strategy = _tradeService.Strategy.ToString() });
+    }
+
+    [HttpPost("strategy")]
+    public ActionResult SetStrategy([FromQuery] ExecutionStrategy strategy)
+    {
+        _tradeService.SetExecutionStrategy(strategy);
+        return Ok(new { Strategy = strategy.ToString() });
+    }
+
     [HttpPost("execute")]
     public async Task<ActionResult> ExecuteTrade([FromBody] ArbitrageOpportunity opportunity)
     {

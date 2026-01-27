@@ -39,6 +39,8 @@ const Dashboard: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isAutoTradeEnabled, setIsAutoTradeEnabled] = useState(false);
   const [isSandboxMode, setIsSandboxMode] = useState(false);
+  const [executionStrategy, setExecutionStrategy] =
+    useState<string>("Sequential");
 
   const fetchBalances = async () => {
     try {
@@ -99,6 +101,26 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchExecutionStrategy = async () => {
+    try {
+      const data = await apiService.getExecutionStrategy();
+      setExecutionStrategy(data.strategy);
+    } catch (err) {
+      console.error("Error fetching execution strategy:", err);
+    }
+  };
+
+  const handleToggleStrategy = async () => {
+    const newStrategy =
+      executionStrategy === "Sequential" ? "Concurrent" : "Sequential";
+    try {
+      const result = await apiService.setExecutionStrategy(newStrategy);
+      setExecutionStrategy(result.strategy);
+    } catch (err) {
+      console.error("Error toggling execution strategy:", err);
+    }
+  };
+
   const fetchSandboxStatus = async () => {
     try {
       const status = await apiService.getSandboxMode();
@@ -138,6 +160,7 @@ const Dashboard: React.FC = () => {
     fetchTransactions();
     fetchAutoTradeStatus();
     fetchSandboxStatus();
+    fetchExecutionStrategy();
     const interval = setInterval(() => {
       fetchBalances();
       fetchTransactions();
@@ -270,7 +293,24 @@ const Dashboard: React.FC = () => {
                 Real-time cryptocurrency arbitrage monitoring
               </p>
             </div>
-            <ConnectionStatus connectionState={connectionState} />
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 glass rounded-xl px-3 py-1.5 border border-white/5">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  Strategy:
+                </span>
+                <button
+                  onClick={handleToggleStrategy}
+                  className={`px-3 py-1 rounded-lg text-sm font-bold transition-all duration-300 ${
+                    executionStrategy === "Sequential"
+                      ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+                      : "bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+                  }`}
+                >
+                  {executionStrategy}
+                </button>
+              </div>
+              <ConnectionStatus connectionState={connectionState} />
+            </div>
           </div>
 
           {/* Stats Panel */}

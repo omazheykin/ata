@@ -2,6 +2,7 @@ using ArbitrageApi.Hubs;
 using ArbitrageApi.Models;
 using ArbitrageApi.Services;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+
+// Add SQLite DbContext
+builder.Services.AddDbContext<ArbitrageApi.Data.StatsDbContext>(options =>
+    options.UseSqlite("Data Source=arbitrage_stats.db"));
 
 // Add SignalR
 builder.Services.AddSignalR(options =>
@@ -57,7 +62,11 @@ builder.Services.AddSingleton<ArbitrageApi.Services.Exchanges.IExchangeClient>(s
 builder.Services.AddHttpClient();
 
 // Register Services
+builder.Services.AddSingleton<StatePersistenceService>();
 builder.Services.AddSingleton<TradeService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<TradeService>());
+builder.Services.AddSingleton<ArbitrageStatsService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<ArbitrageStatsService>());
 
 // Register background service as singleton so we can inject it into controller
 builder.Services.AddSingleton<ArbitrageDetectionService>();

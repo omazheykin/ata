@@ -52,6 +52,7 @@ public class TradeServiceTests
         var opportunity = new ArbitrageOpportunity
         {
             Asset = "BTC",
+            Symbol = "BTCUSD",
             BuyExchange = "Binance",
             SellExchange = "Coinbase",
             Volume = 0.1m
@@ -79,6 +80,7 @@ public class TradeServiceTests
         var opportunity = new ArbitrageOpportunity
         {
             Asset = "BTC",
+            Symbol = "BTCUSD",
             BuyExchange = "Binance",
             SellExchange = "Coinbase",
             Volume = 0.1m
@@ -111,6 +113,7 @@ public class TradeServiceTests
         var opportunity = new ArbitrageOpportunity
         {
             Asset = "BTC",
+            Symbol = "BTCUSD",
             BuyExchange = "Binance",
             SellExchange = "Coinbase",
             Volume = 0.1m
@@ -138,6 +141,7 @@ public class TradeServiceTests
         var opportunity = new ArbitrageOpportunity
         {
             Asset = "BTC",
+            Symbol = "BTCUSD",
             BuyExchange = "Binance",
             SellExchange = "Coinbase",
             Volume = 0.1m

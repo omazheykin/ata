@@ -18,16 +18,33 @@ public class ArbitrageDetectionService : BackgroundService
 
     public bool IsSandboxMode => _isSandboxMode;
 
+    private readonly StatePersistenceService _persistenceService;
+    private readonly ArbitrageStatsService _statsService;
+
     public ArbitrageDetectionService(
         IHubContext<ArbitrageHub> hubContext,
         ILogger<ArbitrageDetectionService> logger,
         IEnumerable<IExchangeClient> exchangeClients,
-        TradeService tradeService)
+        TradeService tradeService,
+        StatePersistenceService persistenceService,
+        ArbitrageStatsService statsService)
     {
         _hubContext = hubContext;
         _logger = logger;
         _exchangeClients = exchangeClients.ToList();
         _tradeService = tradeService;
+        _persistenceService = persistenceService;
+        _statsService = statsService;
+
+        // Load state from persistence
+        var state = _persistenceService.GetState();
+        _isSandboxMode = state.IsSandboxMode;
+        
+        // Apply sandbox mode to all clients immediately
+        foreach (var client in _exchangeClients)
+        {
+            client.SetSandboxMode(_isSandboxMode);
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -75,13 +92,26 @@ public class ArbitrageDetectionService : BackgroundService
                     // Auto-Trade Logic
                     if (_tradeService.IsAutoTradeEnabled && opportunity.ProfitPercentage >= _tradeService.MinProfitThreshold)
                     {
-                        _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), executing...", opportunity.ProfitPercentage);
-                        var success = await _tradeService.ExecuteTradeAsync(opportunity);
-                        if (success)
+                        // CALENDAR INTEGRATION: Check activity zone before trading
+                        var stats = await _statsService.GetStatsAsync();
+                        var now = DateTime.UtcNow;
+                        var day = now.DayOfWeek.ToString().Substring(0, 3);
+                        var hour = now.Hour.ToString("D2");
+
+                        if (stats.Calendar.TryGetValue(day, out var dayHours) && dayHours.TryGetValue(hour, out var detail))
                         {
-                            // Notify clients about the new transaction
-                            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _tradeService.GetRecentTransactions().First(), stoppingToken);
+                            if (detail.Zone == "low_activity")
+                            {
+                                _logger.LogInformation("📉 Auto-Trade: Skipping profitable opportunity ({Profit}%) because current activity zone is LOW.", opportunity.ProfitPercentage);
+                                continue;
+                            }
                         }
+
+                        _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), queuing for execution...", opportunity.ProfitPercentage);
+                        await _tradeService.QueueTradeAsync(opportunity);
+                        
+                        // Note: Transaction notification will now happen in TradeService or via a separate event
+                        // For now, we'll let the UI update via the regular transaction polling or SignalR from TradeService if implemented
                     }
 
                     _logger.LogInformation(
@@ -126,121 +156,47 @@ public class ArbitrageDetectionService : BackgroundService
         try
         {
             var symbols = TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
-            // Fetch order books and fees for all exchanges
-            var orderBooks = new Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>>();
-            var feesDict = new Dictionary<string, (decimal Maker, decimal Taker)>();
-            foreach (var client in _exchangeClients)
-            {
-                var fees = await client.GetSpotFeesAsync() ?? (0m, 0m);
-                feesDict[client.ExchangeName] = fees;
-                var books = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>();
-                foreach (var symbol in symbols)
-                {
-                    var book = await client.GetOrderBookAsync(symbol, 20);
-                    if (book != null)
-                        books[symbol] = book.Value;
-                }
-                orderBooks[client.ExchangeName] = books;
-            }
+            
+            // 1. Fetch market data (order books and fees)
+            var (orderBooks, feesDict) = await FetchMarketDataAsync(symbols, cancellationToken);
 
             foreach (var symbol in symbols)
             {
-                // Find best buy (lowest ask) and best sell (highest bid) across exchanges
-                (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks)? bestBuy = null;
-                (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids)? bestSell = null;
-                foreach (var (exchange, books) in orderBooks)
-                {
-                    if (books.TryGetValue(symbol, out var book))
-                    {
-                        if (book.Asks.Count > 0)
-                        {
-                            var ask = book.Asks[0];
-                            if (bestBuy == null || ask.Price < bestBuy.Value.Price)
-                                bestBuy = (exchange, ask.Price, feesDict[exchange], book.Asks);
-                        }
-                        if (book.Bids.Count > 0)
-                        {
-                            var bid = book.Bids[0];
-                            if (bestSell == null || bid.Price > bestSell.Value.Price)
-                                bestSell = (exchange, bid.Price, feesDict[exchange], book.Bids);
-                        }
-                    }
-                }
-                if (bestBuy == null || bestSell == null) continue;
-                if (bestBuy.Value.Exchange == bestSell.Value.Exchange) continue;
+                // 2. Find best buy and best sell prices across exchanges
+                var bestPrices = FindBestPrices(symbol, orderBooks, feesDict);
+                if (bestPrices.BestBuy == null || bestPrices.BestSell == null) continue;
+                if (bestPrices.BestBuy.Value.Exchange == bestPrices.BestSell.Value.Exchange) continue;
 
-                // Simulate order execution for a reasonable volume (e.g., up to 50% of available funds, but limited by order book depth)
+                var bestBuy = bestPrices.BestBuy.Value;
+                var bestSell = bestPrices.BestSell.Value;
+
+                // 3. Calculate maximum volume based on available funds (Sandbox) or default
                 var pair = TradingPair.CommonPairs.First(p => p.Symbol == symbol);
-                decimal maxVolume = 1.0m; // Default max volume
-                if (_isSandboxMode)
-                {
-                    var buyExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestBuy.Value.Exchange);
-                    var sellExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestSell.Value.Exchange);
-                    
-                    var buyBalances = await buyExchangeClient.GetBalancesAsync();
-                    var sellBalances = await sellExchangeClient.GetBalancesAsync();
-                    
-                    var usdBalance = buyBalances.FirstOrDefault(b => b.Asset == "USD")?.Free ?? 0m;
-                    var assetBalance = sellBalances.FirstOrDefault(b => b.Asset == pair.BaseAsset)?.Free ?? 0m;
+                decimal maxVolume = await CalculateMaxVolumeAsync(pair, bestBuy, bestSell);
+                if (maxVolume <= 0) continue;
 
-                    if (usdBalance > 0 && assetBalance > 0)
-                    {
-                        var maxVolFromUsd = (usdBalance * 0.5m) / bestBuy.Value.Price;
-                        var maxVolFromAsset = assetBalance * 0.5m;
-                        maxVolume = Math.Min(maxVolFromUsd, maxVolFromAsset);
-                        maxVolume = Math.Round(maxVolume, 8);
-                    }
-                }
-                // Simulate walking the order book for buy (asks)
-                decimal buyCost = 0m;
-                decimal buyVolumeFilled = 0m;
-                foreach (var (price, qty) in bestBuy.Value.Asks)
-                {
-                    var take = Math.Min(qty, maxVolume - buyVolumeFilled);
-                    buyCost += take * price;
-                    buyVolumeFilled += take;
-                    if (buyVolumeFilled >= maxVolume) break;
-                }
-                if (buyVolumeFilled == 0) continue;
-                decimal avgBuyPrice = buyCost / buyVolumeFilled;
+                // 4. Simulate order book execution
+                var execution = SimulateOrderBookExecution(maxVolume, bestBuy.Asks, bestSell.Bids);
+                if (execution.BuyVolumeFilled == 0 || execution.SellVolumeFilled == 0) continue;
 
-                // Simulate walking the order book for sell (bids)
-                decimal sellProceeds = 0m;
-                decimal sellVolumeFilled = 0m;
-                foreach (var (price, qty) in bestSell.Value.Bids)
+                // 5. Calculate profit and create opportunity if profitable
+                var opportunity = CreateOpportunity(pair, symbol, bestBuy, bestSell, execution);
+                
+                // 6. Queue event for statistics (even if not profitable enough to trade)
+                await _statsService.QueueEventAsync(new ArbitrageEvent
                 {
-                    var take = Math.Min(qty, buyVolumeFilled - sellVolumeFilled);
-                    sellProceeds += take * price;
-                    sellVolumeFilled += take;
-                    if (sellVolumeFilled >= buyVolumeFilled) break;
-                }
-                if (sellVolumeFilled == 0) continue;
-                decimal avgSellPrice = sellProceeds / sellVolumeFilled;
+                    Id = Guid.NewGuid(),
+                    Pair = symbol,
+                    Direction = $"{bestBuy.Exchange.Substring(0, 1)}→{bestSell.Exchange.Substring(0, 1)}",
+                    Spread = (execution.AvgSellPrice - execution.AvgBuyPrice) / execution.AvgBuyPrice,
+                    DepthBuy = bestBuy.Asks.Sum(a => a.Quantity),
+                    DepthSell = bestSell.Bids.Sum(b => b.Quantity),
+                    Timestamp = DateTime.UtcNow
+                });
 
-                // Calculate profit percentage after fees
-                var buyFee = bestBuy.Value.Fees.Maker;
-                var sellFee = bestSell.Value.Fees.Maker;
-                var grossProfitPercentage = ((avgSellPrice - avgBuyPrice) / avgBuyPrice) * 100;
-                var netProfitPercentage = grossProfitPercentage - buyFee - sellFee;
-
-                if (netProfitPercentage > 0.1m && buyVolumeFilled >= 0.00001m )
+                if (opportunity != null)
                 {
-                    opportunities.Add(new ArbitrageOpportunity
-                    {
-                        Id = Guid.NewGuid(),
-                        Asset = pair.BaseAsset,
-                        BuyExchange = bestBuy.Value.Exchange,
-                        SellExchange = bestSell.Value.Exchange,
-                        BuyPrice = avgBuyPrice,
-                        SellPrice = avgSellPrice,
-                        BuyFee = buyFee,
-                        SellFee = sellFee,
-                        ProfitPercentage = Math.Round(netProfitPercentage, 2),
-                        Volume = buyVolumeFilled,
-                        Timestamp = DateTime.UtcNow,
-                        Status = "Active",
-                        IsSandbox = _isSandboxMode
-                    });
+                    opportunities.Add(opportunity);
                 }
             }
             _logger.LogInformation("Found {Count} arbitrage opportunities (order book based)", opportunities.Count);
@@ -250,6 +206,153 @@ public class ArbitrageDetectionService : BackgroundService
             _logger.LogError(ex, "Error finding arbitrage opportunities (order book based)");
         }
         return opportunities;
+    }
+
+    private async Task<(Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>> OrderBooks, Dictionary<string, (decimal Maker, decimal Taker)> Fees)> FetchMarketDataAsync(List<string> symbols, CancellationToken ct)
+    {
+        var orderBooks = new Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>>();
+        var feesDict = new Dictionary<string, (decimal Maker, decimal Taker)>();
+
+        foreach (var client in _exchangeClients)
+        {
+            var fees = await client.GetSpotFeesAsync() ?? (0m, 0m);
+            feesDict[client.ExchangeName] = fees;
+            
+            var books = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>();
+            foreach (var symbol in symbols)
+            {
+                var book = await client.GetOrderBookAsync(symbol, 20);
+                if (book != null)
+                    books[symbol] = book.Value;
+            }
+            orderBooks[client.ExchangeName] = books;
+        }
+
+        return (orderBooks, feesDict);
+    }
+
+    private ( (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks)? BestBuy, 
+              (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids)? BestSell ) 
+            FindBestPrices(string symbol, Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>> orderBooks, Dictionary<string, (decimal Maker, decimal Taker)> feesDict)
+    {
+        (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks)? bestBuy = null;
+        (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids)? bestSell = null;
+
+        foreach (var (exchange, books) in orderBooks)
+        {
+            if (books.TryGetValue(symbol, out var book))
+            {
+                if (book.Asks.Count > 0)
+                {
+                    var ask = book.Asks[0];
+                    if (bestBuy == null || ask.Price < bestBuy.Value.Price)
+                        bestBuy = (exchange, ask.Price, feesDict[exchange], book.Asks);
+                }
+                if (book.Bids.Count > 0)
+                {
+                    var bid = book.Bids[0];
+                    if (bestSell == null || bid.Price > bestSell.Value.Price)
+                        bestSell = (exchange, bid.Price, feesDict[exchange], book.Bids);
+                }
+            }
+        }
+
+        return (bestBuy, bestSell);
+    }
+
+    private async Task<decimal> CalculateMaxVolumeAsync(TradingPair pair, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks) bestBuy, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids) bestSell)
+    {
+        decimal maxVolume = 1.0m; // Default for real mode
+
+        if (_isSandboxMode)
+        {
+            var buyExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestBuy.Exchange);
+            var sellExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestSell.Exchange);
+            
+            var buyBalances = await buyExchangeClient.GetBalancesAsync();
+            var sellBalances = await sellExchangeClient.GetBalancesAsync();
+            
+            var usdBalance = buyBalances.FirstOrDefault(b => b.Asset == "USD")?.Free ?? 0m;
+            var assetBalance = sellBalances.FirstOrDefault(b => b.Asset == pair.BaseAsset)?.Free ?? 0m;
+
+            var maxVolFromUsd = (usdBalance * 0.5m) / bestBuy.Price;
+            var maxVolFromAsset = assetBalance * 0.5m;
+            
+            maxVolume = Math.Min(maxVolFromUsd, maxVolFromAsset);
+            maxVolume = Math.Round(maxVolume, 8);
+
+            if (maxVolume <= 0)
+            {
+                _logger.LogDebug("⏭️ Skipping {Symbol} opportunity: Insufficient funds in Sandbox (USD: {Usd}, {Asset}: {AssetBal})", 
+                    pair.Symbol, usdBalance, pair.BaseAsset, assetBalance);
+            }
+        }
+
+        return maxVolume;
+    }
+
+    private (decimal BuyVolumeFilled, decimal AvgBuyPrice, decimal SellVolumeFilled, decimal AvgSellPrice) SimulateOrderBookExecution(decimal maxVolume, List<(decimal Price, decimal Quantity)> asks, List<(decimal Price, decimal Quantity)> bids)
+    {
+        // Simulate walking the order book for buy (asks)
+        decimal buyCost = 0m;
+        decimal buyVolumeFilled = 0m;
+        foreach (var (price, qty) in asks)
+        {
+            var take = Math.Min(qty, maxVolume - buyVolumeFilled);
+            buyCost += take * price;
+            buyVolumeFilled += take;
+            if (buyVolumeFilled >= maxVolume) break;
+        }
+
+        if (buyVolumeFilled == 0) return (0, 0, 0, 0);
+        decimal avgBuyPrice = buyCost / buyVolumeFilled;
+
+        // Simulate walking the order book for sell (bids)
+        decimal sellProceeds = 0m;
+        decimal sellVolumeFilled = 0m;
+        foreach (var (price, qty) in bids)
+        {
+            var take = Math.Min(qty, buyVolumeFilled - sellVolumeFilled);
+            sellProceeds += take * price;
+            sellVolumeFilled += take;
+            if (sellVolumeFilled >= buyVolumeFilled) break;
+        }
+
+        if (sellVolumeFilled == 0) return (buyVolumeFilled, avgBuyPrice, 0, 0);
+        decimal avgSellPrice = sellProceeds / sellVolumeFilled;
+
+        return (buyVolumeFilled, avgBuyPrice, sellVolumeFilled, avgSellPrice);
+    }
+
+    private ArbitrageOpportunity? CreateOpportunity(TradingPair pair, string symbol, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks) bestBuy, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids) bestSell, (decimal BuyVolumeFilled, decimal AvgBuyPrice, decimal SellVolumeFilled, decimal AvgSellPrice) execution)
+    {
+        var buyFee = bestBuy.Fees.Maker;
+        var sellFee = bestSell.Fees.Maker;
+        var grossProfitPercentage = ((execution.AvgSellPrice - execution.AvgBuyPrice) / execution.AvgBuyPrice) * 100;
+        var netProfitPercentage = grossProfitPercentage - buyFee - sellFee;
+
+        if (netProfitPercentage > 0.1m && execution.BuyVolumeFilled >= 0.00001m)
+        {
+            return new ArbitrageOpportunity
+            {
+                Id = Guid.NewGuid(),
+                Asset = pair.BaseAsset,
+                Symbol = symbol,
+                BuyExchange = bestBuy.Exchange,
+                SellExchange = bestSell.Exchange,
+                BuyPrice = execution.AvgBuyPrice,
+                SellPrice = execution.AvgSellPrice,
+                BuyFee = buyFee,
+                SellFee = sellFee,
+                ProfitPercentage = Math.Round(netProfitPercentage, 2),
+                Volume = execution.BuyVolumeFilled,
+                Timestamp = DateTime.UtcNow,
+                Status = "Active",
+                IsSandbox = _isSandboxMode
+            };
+        }
+
+        return null;
     }
 
     public List<ArbitrageOpportunity> GetRecentOpportunities()
@@ -264,6 +367,11 @@ public class ArbitrageDetectionService : BackgroundService
     {
         _logger.LogInformation("🔄 Switching Global Sandbox Mode to: {Status}", enabled ? "ENABLED" : "DISABLED");
         _isSandboxMode = enabled;
+        
+        var state = _persistenceService.GetState();
+        state.IsSandboxMode = enabled;
+        _persistenceService.SaveState(state);
+
         foreach (var client in _exchangeClients)
         {
             try 

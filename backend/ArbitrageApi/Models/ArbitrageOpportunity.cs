@@ -4,6 +4,7 @@ public class ArbitrageOpportunity
 {
     public Guid Id { get; set; }
     public string Asset { get; set; } = string.Empty;
+    public string Symbol { get; set; } = string.Empty;
     public string BuyExchange { get; set; } = string.Empty;
     public string SellExchange { get; set; } = string.Empty;
     public decimal BuyPrice { get; set; }
