@@ -14,7 +14,9 @@ public class ArbitrageDetectionService : BackgroundService
     private readonly List<ArbitrageOpportunity> _recentOpportunities = new();
     private readonly object _lock = new();
     private bool _isSandboxMode = false;
-    private int _nextCheckInterval = 2000;
+    private readonly Dictionary<string, IWebSocketPriceStream> _webSocketStreams = new();
+    private DateTime _lastDetectionTime = DateTime.UtcNow;
+    private readonly int _detectionIntervalMs = 500;
 
     public bool IsSandboxMode => _isSandboxMode;
 
@@ -46,8 +48,8 @@ public class ArbitrageDetectionService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("🚀 Arbitrage Detection Service started in {Mode} mode", _isSandboxMode ? "SANDBOX" : "REAL");
-        _logger.LogInformation("📡 Monitoring exchanges: {Exchanges}", 
+        _logger.LogInformation("🚀 Arbitrage Detection Service started in {Mode} mode with WebSocket streams", _isSandboxMode ? "SANDBOX" : "REAL");
+        _logger.LogInformation("📡 Monitoring exchanges: {Exchanges}",
             string.Join(", ", _exchangeClients.Select(c => c.ExchangeName)));
 
         // Ensure all exchange clients are initialized (especially Coinbase)
@@ -59,79 +61,171 @@ public class ArbitrageDetectionService : BackgroundService
             }
         }
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            if(_exchangeClients?.Count < 2){
+                _logger.LogWarning("Not enough exchanges to detect arbitrage opportunities");
+                return;
+            }
+
+            var symbols = TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
+
+            // Start WebSocket streams for all exchanges
+            var streamTasks = new List<Task>();
+            foreach (var client in _exchangeClients)
             {
-                if(_exchangeClients?.Count < 2){
-                    _logger.LogWarning("Not enough exchanges to detect arbitrage opportunities");
-                    await Task.Delay(10000, stoppingToken);
-                    continue;
-                }
-                var opportunities = await FindArbitrageOpportunities(stoppingToken);
+                var stream = client.CreateWebSocketStream(symbols);
+                _webSocketStreams[client.ExchangeName] = stream;
 
-                foreach (var opportunity in opportunities)
+                stream.PriceUpdated += (sender, update) => OnWebSocketPriceUpdate(update, stoppingToken);
+                streamTasks.Add(stream.StartAsync(stoppingToken));
+            }
+
+            // Give streams time to connect
+            await Task.Delay(2000, stoppingToken);
+
+            _logger.LogInformation("All WebSocket streams connected");
+
+            // Main detection loop - runs at fixed interval checking cached order books
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
                 {
-                    lock (_lock)
+                    var now = DateTime.UtcNow;
+                    if ((now - _lastDetectionTime).TotalMilliseconds >= _detectionIntervalMs)
                     {
-                        _recentOpportunities.Add(opportunity);
+                        var opportunities = await FindArbitrageOpportunitiesFromWebSockets(stoppingToken);
 
-                        // Keep only last 100 opportunities
-                        if (_recentOpportunities.Count > 100)
+                        foreach (var opportunity in opportunities)
                         {
-                            _recentOpportunities.RemoveAt(0);
+                            lock (_lock)
+                            {
+                                _recentOpportunities.Add(opportunity);
+                                if (_recentOpportunities.Count > 100)
+                                {
+                                    _recentOpportunities.RemoveAt(0);
+                                }
+                            }
+
+                            await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
+
+                            if (_tradeService.IsAutoTradeEnabled && opportunity.ProfitPercentage >= _tradeService.MinProfitThreshold)
+                            {
+                                _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), executing...", opportunity.ProfitPercentage);
+                                var success = await _tradeService.ExecuteTradeAsync(opportunity);
+                                if (success)
+                                {
+                                    await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _tradeService.GetRecentTransactions().First(), stoppingToken);
+                                }
+                            }
+
+                            _logger.LogInformation(
+                                "💰 {Mode} Arbitrage: {Asset} - Buy on {BuyExchange} at ${BuyPrice:N2}, Sell on {SellExchange} at ${SellPrice:N2}, Profit: {Profit:N2}%",
+                                _isSandboxMode ? "SANDBOX" : "REAL",
+                                opportunity.Asset,
+                                opportunity.BuyExchange,
+                                opportunity.BuyPrice,
+                                opportunity.SellExchange,
+                                opportunity.SellPrice,
+                                opportunity.ProfitPercentage);
                         }
+
+                        _lastDetectionTime = now;
                     }
 
-                    // Broadcast to all connected clients
-                    await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
-
-                    // Auto-Trade Logic
-                    if (_tradeService.IsAutoTradeEnabled && opportunity.ProfitPercentage >= _tradeService.MinProfitThreshold)
-                    {
-                        _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), executing...", opportunity.ProfitPercentage);
-                        var success = await _tradeService.ExecuteTradeAsync(opportunity);
-                        if (success)
-                        {
-                            // Notify clients about the new transaction
-                            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _tradeService.GetRecentTransactions().First(), stoppingToken);
-                        }
-                    }
-
-                    _logger.LogInformation(
-                        "💰 {Mode} Arbitrage: {Asset} - Buy on {BuyExchange} at ${BuyPrice:N2}, Sell on {SellExchange} at ${SellPrice:N2}, Profit: {Profit:N2}%",
-                        _isSandboxMode ? "SANDBOX" : "REAL",
-                        opportunity.Asset,
-                        opportunity.BuyExchange,
-                        opportunity.BuyPrice,
-                        opportunity.SellExchange,
-                        opportunity.SellPrice,
-                        opportunity.ProfitPercentage);
+                    await Task.Delay(50, stoppingToken);
                 }
-
-                // Wait 10 seconds before next check (to respect API rate limits)
-                await Task.Delay(_nextCheckInterval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Graceful shutdown
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in arbitrage detection service");
-                try 
+                catch (OperationCanceledException)
                 {
-                    await Task.Delay(10000, stoppingToken);
+                    break;
                 }
-                catch (OperationCanceledException) 
-                { 
-                    break; 
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in arbitrage detection loop");
+                    await Task.Delay(1000, stoppingToken);
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Arbitrage Detection Service cancellation requested");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fatal error in arbitrage detection service");
+        }
+        finally
+        {
+            // Stop all WebSocket streams
+            foreach (var stream in _webSocketStreams.Values)
+            {
+                await stream.StopAsync();
+            }
+            _logger.LogInformation("Arbitrage Detection Service stopped");
+        }
+    }
 
-        _logger.LogInformation("Arbitrage Detection Service stopped");
+    private void OnWebSocketPriceUpdate(WebSocketPriceUpdate update, CancellationToken cancellationToken)
+    {
+    }
+
+    private async Task<List<ArbitrageOpportunity>> FindArbitrageOpportunitiesFromWebSockets(CancellationToken cancellationToken)
+    {
+        var opportunities = new List<ArbitrageOpportunity>();
+        try
+        {
+            var symbols = TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
+
+            foreach (var symbol in symbols)
+            {
+                if (_webSocketStreams.Count < 2) continue;
+
+                var orderBooks = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>();
+
+                foreach (var (exchangeName, stream) in _webSocketStreams)
+                {
+                    var book = stream.GetLatestOrderBook(symbol);
+                    if (book.HasValue)
+                    {
+                        orderBooks[exchangeName] = book.Value;
+                    }
+                }
+
+                if (orderBooks.Count < 2) continue;
+
+                var fees = new Dictionary<string, (decimal Maker, decimal Taker)>();
+                foreach (var client in _exchangeClients)
+                {
+                    var fee = await client.GetSpotFeesAsync() ?? (0m, 0m);
+                    fees[client.ExchangeName] = fee;
+                }
+
+                var bestPrices = FindBestPrices(symbol, orderBooks, fees);
+                if (bestPrices.BestBuy == null || bestPrices.BestSell == null) continue;
+                if (bestPrices.BestBuy.Value.Exchange == bestPrices.BestSell.Value.Exchange) continue;
+
+                var bestBuy = bestPrices.BestBuy.Value;
+                var bestSell = bestPrices.BestSell.Value;
+
+                var pair = TradingPair.CommonPairs.First(p => p.Symbol == symbol);
+                decimal maxVolume = await CalculateMaxVolumeAsync(pair, bestBuy, bestSell);
+                if (maxVolume <= 0) continue;
+
+                var execution = SimulateOrderBookExecution(maxVolume, bestBuy.Asks, bestSell.Bids);
+                if (execution.BuyVolumeFilled == 0 || execution.SellVolumeFilled == 0) continue;
+
+                var opportunity = CreateOpportunity(pair, symbol, bestBuy, bestSell, execution);
+                if (opportunity != null)
+                {
+                    opportunities.Add(opportunity);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error finding arbitrage opportunities from WebSockets");
+        }
+        return opportunities;
     }
 
     private async Task<List<ArbitrageOpportunity>> FindArbitrageOpportunities(CancellationToken cancellationToken)

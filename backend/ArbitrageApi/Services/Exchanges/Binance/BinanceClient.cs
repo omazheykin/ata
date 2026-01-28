@@ -77,4 +77,9 @@ public class BinanceClient : IExchangeClient
     // Sandbox management
     public Task DepositSandboxFundsAsync(string asset, decimal amount)
         => _currentState.DepositSandboxFundsAsync(asset, amount);
+
+    public IWebSocketPriceStream CreateWebSocketStream(List<string> symbols)
+    {
+        return new BinanceWebSocketStream(_logger, symbols);
+    }
 }

@@ -86,4 +86,10 @@ public class CoinbaseClient : IExchangeClient
     // Sandbox management
     public Task DepositSandboxFundsAsync(string asset, decimal amount)
         => _currentState.DepositSandboxFundsAsync(asset, amount);
+
+    public IWebSocketPriceStream CreateWebSocketStream(List<string> symbols)
+    {
+        var symbolMapping = ((CoinbaseBaseState)_currentState).SymbolMapping;
+        return new CoinbaseWebSocketStream(_logger, symbols, symbolMapping);
+    }
 }

@@ -16,7 +16,7 @@ public abstract class CoinbaseBaseState : IExchangeState
     protected readonly string BaseUrl;
     protected readonly string ExchangeName = "Coinbase";
 
-    protected Dictionary<string, string> SymbolMapping = new()
+    public Dictionary<string, string> SymbolMapping = new()
     {
         { "BTCUSDT", "BTC-USD" },
         { "ETHUSDT", "ETH-USD" },

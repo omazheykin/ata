@@ -29,4 +29,6 @@ public interface IExchangeClient
 
     // Sandbox management
     Task DepositSandboxFundsAsync(string asset, decimal amount);
+
+    IWebSocketPriceStream CreateWebSocketStream(List<string> symbols);
 }
