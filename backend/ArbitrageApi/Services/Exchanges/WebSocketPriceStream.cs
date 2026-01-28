@@ -27,7 +27,6 @@ public abstract class WebSocketPriceStreamBase : IWebSocketPriceStream
     protected ClientWebSocket _webSocket;
     protected CancellationTokenSource _cancellationTokenSource;
     protected readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)> _orderBooks;
-    protected readonly object _orderBookLock = new();
 
     public bool IsConnected => _webSocket?.State == WebSocketState.Open;
     public event EventHandler<WebSocketPriceUpdate>? PriceUpdated;
@@ -61,11 +60,8 @@ public abstract class WebSocketPriceStreamBase : IWebSocketPriceStream
 
     public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)? GetLatestOrderBook(string symbol)
     {
-        lock (_orderBookLock)
-        {
-            _orderBooks.TryGetValue(symbol, out var book);
-            return book.Bids?.Count > 0 ? book : null;
-        }
+        _orderBooks.TryGetValue(symbol, out var book);
+        return book.Bids?.Count > 0 ? book : null;
     }
 
     protected void OnPriceUpdated(WebSocketPriceUpdate update)

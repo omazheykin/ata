@@ -63,10 +63,7 @@ public class BinanceWebSocketStream : WebSocketPriceStreamBase
                         ))
                         .ToList();
 
-                    lock (_orderBookLock)
-                    {
-                        _orderBooks[symbol] = (bids, asks);
-                    }
+                    _orderBooks[symbol] = (bids, asks);
 
                     if (bids.Count > 0 && asks.Count > 0)
                     {
