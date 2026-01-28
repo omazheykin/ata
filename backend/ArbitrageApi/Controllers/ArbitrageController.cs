@@ -8,16 +8,16 @@ namespace ArbitrageApi.Controllers;
 [Route("api/[controller]")]
 public class ArbitrageController : ControllerBase
 {
-    private readonly ArbitrageDetectionService _detectionService;
+    private readonly TradeService _tradeService;
     private readonly IEnumerable<ArbitrageApi.Services.Exchanges.IExchangeClient> _exchangeClients;
     private readonly ILogger<ArbitrageController> _logger;
 
     public ArbitrageController(
-        ArbitrageDetectionService detectionService,
+        TradeService tradeService,
         IEnumerable<ArbitrageApi.Services.Exchanges.IExchangeClient> exchangeClients,
         ILogger<ArbitrageController> logger)
     {
-        _detectionService = detectionService;
+        _tradeService = tradeService;
         _exchangeClients = exchangeClients;
         _logger = logger;
     }
@@ -28,7 +28,7 @@ public class ArbitrageController : ControllerBase
     {
         try
         {
-            var opportunities = _detectionService.GetRecentOpportunities();
+            var opportunities = _tradeService.GetRecentOpportunities();
             return Ok(opportunities);
         }
         catch (Exception ex)
@@ -43,13 +43,13 @@ public class ArbitrageController : ControllerBase
     {
         try
         {
-            var opportunities = _detectionService.GetRecentOpportunities();
-            
+            var opportunities = _tradeService.GetRecentOpportunities();
+
             var stats = new
             {
                 TotalOpportunities = opportunities.Count,
-                AverageProfitPercentage = opportunities.Any() 
-                    ? Math.Round(opportunities.Average(o => o.ProfitPercentage), 2) 
+                AverageProfitPercentage = opportunities.Any()
+                    ? Math.Round(opportunities.Average(o => o.ProfitPercentage), 2)
                     : 0,
                 BestOpportunity = opportunities
                     .OrderByDescending(o => o.ProfitPercentage)

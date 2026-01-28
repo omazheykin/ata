@@ -11,8 +11,6 @@ public class ArbitrageDetectionService : BackgroundService
     private readonly ILogger<ArbitrageDetectionService> _logger;
     private readonly List<IExchangeClient> _exchangeClients;
     private readonly TradeService _tradeService;
-    private readonly List<ArbitrageOpportunity> _recentOpportunities = new();
-    private readonly object _lock = new();
     private bool _isSandboxMode = false;
     private readonly Dictionary<string, IWebSocketPriceStream> _webSocketStreams = new();
     private DateTime _lastDetectionTime = DateTime.UtcNow;
@@ -98,26 +96,8 @@ public class ArbitrageDetectionService : BackgroundService
 
                         foreach (var opportunity in opportunities)
                         {
-                            lock (_lock)
-                            {
-                                _recentOpportunities.Add(opportunity);
-                                if (_recentOpportunities.Count > 100)
-                                {
-                                    _recentOpportunities.RemoveAt(0);
-                                }
-                            }
-
+                            _tradeService.TrackOpportunity(opportunity);
                             await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
-
-                            if (_tradeService.IsAutoTradeEnabled && opportunity.ProfitPercentage >= _tradeService.MinProfitThreshold)
-                            {
-                                _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), executing...", opportunity.ProfitPercentage);
-                                var success = await _tradeService.ExecuteTradeAsync(opportunity);
-                                if (success)
-                                {
-                                    await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _tradeService.GetRecentTransactions().First(), stoppingToken);
-                                }
-                            }
 
                             _logger.LogInformation(
                                 "💰 {Mode} Arbitrage: {Asset} - Buy on {BuyExchange} at ${BuyPrice:N2}, Sell on {SellExchange} at ${SellPrice:N2}, Profit: {Profit:N2}%",
@@ -420,13 +400,6 @@ public class ArbitrageDetectionService : BackgroundService
         return null;
     }
 
-    public List<ArbitrageOpportunity> GetRecentOpportunities()
-    {
-        lock (_lock)
-        {
-            return _recentOpportunities.ToList();
-        }
-    }
 
     public async Task SetSandboxMode(bool enabled)
     {

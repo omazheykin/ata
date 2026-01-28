@@ -13,6 +13,7 @@ public class TradeService
     private readonly ILogger<TradeService> _logger;
     private readonly List<IExchangeClient> _exchangeClients;
     private readonly ConcurrentQueue<Transaction> _transactions = new();
+    private readonly ConcurrentQueue<ArbitrageOpportunity> _opportunities = new();
     private bool _isAutoTradeEnabled = false;
     private decimal _minProfitThreshold = 0.5m; // 0.5% default
     private ExecutionStrategy _strategy = ExecutionStrategy.Sequential;
@@ -235,5 +236,16 @@ public class TradeService
     public List<Transaction> GetRecentTransactions()
     {
         return _transactions.Reverse().ToList();
+    }
+
+    public void TrackOpportunity(ArbitrageOpportunity opportunity)
+    {
+        _opportunities.Enqueue(opportunity);
+        while (_opportunities.Count > 100) _opportunities.TryDequeue(out _);
+    }
+
+    public List<ArbitrageOpportunity> GetRecentOpportunities()
+    {
+        return _opportunities.Reverse().ToList();
     }
 }
