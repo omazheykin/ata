@@ -1,6 +1,5 @@
 using System.Net.WebSockets;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using ArbitrageApi.Models;
 
 namespace ArbitrageApi.Services.Exchanges;

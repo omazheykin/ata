@@ -111,16 +111,14 @@ public class CoinbaseWebSocketStream : WebSocketPriceStreamBase
 
             if (bids.Count > 0 || asks.Count > 0)
             {
-                if (_orderBooks.TryGetValue(productId, out var existing))
-                {
-                    var updatedBids = MergeOrderBookSide(existing.Bids, bids, true);
-                    var updatedAsks = MergeOrderBookSide(existing.Asks, asks, false);
-                    _orderBooks[productId] = (updatedBids.Take(20).ToList(), updatedAsks.Take(20).ToList());
-                }
-                else
-                {
-                    _orderBooks[productId] = (bids.Take(20).ToList(), asks.Take(20).ToList());
-                }
+                _orderBooks.AddOrUpdate(productId,
+                    (bids.Take(20).ToList(), asks.Take(20).ToList()),
+                    (_, existing) =>
+                    {
+                        var updatedBids = MergeOrderBookSide(existing.Bids, bids, true);
+                        var updatedAsks = MergeOrderBookSide(existing.Asks, asks, false);
+                        return (updatedBids.Take(20).ToList(), updatedAsks.Take(20).ToList());
+                    });
             }
         }
     }
