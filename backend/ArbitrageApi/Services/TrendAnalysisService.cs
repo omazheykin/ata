@@ -1,3 +1,4 @@
+using System.Globalization;
 using ArbitrageApi.Data;
 using ArbitrageApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -105,7 +106,7 @@ public class TrendAnalysisService : ITrendAnalysisService
         var hour = parts[1];
 
         var now = DateTime.UtcNow;
-        var currentDay = now.DayOfWeek.ToString().Substring(0, 3);
+        var currentDay = now.ToString("ddd", CultureInfo.InvariantCulture);
         var currentHour = now.Hour.ToString("D2");
 
         return new RebalanceWindow
