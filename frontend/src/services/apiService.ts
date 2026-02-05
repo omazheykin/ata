@@ -137,6 +137,11 @@ export const apiService = {
         return response.data;
     },
 
+    async setRebalanceThreshold(threshold: number): Promise<{ threshold: number }> {
+        const response = await apiClient.post<{ threshold: number }>(`/settings/rebalance-threshold?threshold=${threshold}`);
+        return response.data;
+    },
+
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {
             exchange,

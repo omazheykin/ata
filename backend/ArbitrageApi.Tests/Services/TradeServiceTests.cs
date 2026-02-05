@@ -62,7 +62,8 @@ public class TradeServiceTests
             new Mock<ILogger<RebalancingService>>().Object, 
             new List<IExchangeClient>(),
             trendServiceMock.Object,
-            _channelProvider);
+            _channelProvider,
+            _persistenceServiceMock.Object);
         _rebalancingServiceMock.Setup(x => x.GetSkew(It.IsAny<string>())).Returns(0m);
 
         // Pass nulls to base constructor of StatsService as we mock the method we need

@@ -23,6 +23,9 @@ public class AppState
     public int MaxConsecutiveLosses { get; set; } = 3;   // Stop if 3 fails in a row
     public bool IsSafetyKillSwitchTriggered { get; set; } = false;
     public string GlobalKillSwitchReason { get; set; } = string.Empty;
+
+    // PR Feedback Updates
+    public decimal MinRebalanceSkewThreshold { get; set; } = 0.1m; // 10% default
 }
 
 public class StatePersistenceService

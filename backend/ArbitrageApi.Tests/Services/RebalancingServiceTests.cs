@@ -15,6 +15,7 @@ public class RebalancingServiceTests
     private readonly Mock<IExchangeClient> _coinbaseClientMock;
     private readonly ITrendAnalysisService _trendService;
     private readonly ChannelProvider _channelProvider;
+    private readonly Mock<StatePersistenceService> _persistenceServiceMock;
     private readonly RebalancingService _rebalancingService;
 
     public RebalancingServiceTests()
@@ -28,8 +29,11 @@ public class RebalancingServiceTests
         _binanceClientMock.Setup(c => c.ExchangeName).Returns("Binance");
         _coinbaseClientMock.Setup(c => c.ExchangeName).Returns("Coinbase");
 
+        _persistenceServiceMock = new Mock<StatePersistenceService>(new Mock<ILogger<StatePersistenceService>>().Object);
+        _persistenceServiceMock.Setup(s => s.GetState()).Returns(new AppState());
+
         var clients = new List<IExchangeClient> { _binanceClientMock.Object, _coinbaseClientMock.Object };
-        _rebalancingService = new RebalancingService(_loggerMock.Object, clients, _trendService, _channelProvider);
+        _rebalancingService = new RebalancingService(_loggerMock.Object, clients, _trendService, _channelProvider, _persistenceServiceMock.Object);
     }
 
     private class ManualTrendService : ITrendAnalysisService

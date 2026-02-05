@@ -10,6 +10,7 @@ public class RebalancingService : BackgroundService
     private readonly List<IExchangeClient> _exchangeClients;
     private readonly ITrendAnalysisService _trendService;
     private readonly ChannelProvider _channelProvider;
+    private readonly StatePersistenceService _persistenceService;
     private readonly ConcurrentDictionary<string, decimal> _assetSkews = new(); // -1.0 (heavy Coinbase) to 1.0 (heavy Binance)
     private readonly ConcurrentDictionary<string, Dictionary<string, decimal>> _exchangeBalances = new();
     private List<RebalancingProposal> _currentProposals = new();
@@ -19,12 +20,14 @@ public class RebalancingService : BackgroundService
         ILogger<RebalancingService> logger, 
         IEnumerable<IExchangeClient> exchangeClients,
         ITrendAnalysisService trendService,
-        ChannelProvider channelProvider)
+        ChannelProvider channelProvider,
+        StatePersistenceService persistenceService)
     {
         _logger = logger;
         _exchangeClients = exchangeClients.ToList();
         _trendService = trendService;
         _channelProvider = channelProvider;
+        _persistenceService = persistenceService;
     }
 
     public ITrendAnalysisService GetTrendAnalysisService() => _trendService;
@@ -101,8 +104,10 @@ public class RebalancingService : BackgroundService
                 var skew = (binanceVal - coinbaseVal) / totalVal;
                 _assetSkews[asset] = Math.Round(skew, 4);
                 
+                var state = _persistenceService.GetState();
+                
                 // Proposal Generation
-                if (Math.Abs(skew) > 0.1m) // Only if imbalance is > 10%
+                if (Math.Abs(skew) > state.MinRebalanceSkewThreshold) // Use configurable threshold (default 10%)
                 {
                     var proposal = await CalculateProposalAsync(asset, skew, binanceVal, coinbaseVal, binance, coinbase);
                     if (proposal != null && proposal.Amount > 0)

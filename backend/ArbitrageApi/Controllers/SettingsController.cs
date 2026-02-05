@@ -96,4 +96,11 @@ public class SettingsController : ControllerBase
         await _detectionService.SetSafetyLimits(drawdown, losses);
         return Ok(new { Drawdown = drawdown, Losses = losses });
     }
+
+    [HttpPost("rebalance-threshold")]
+    public async Task<ActionResult> SetRebalanceThreshold([FromQuery] decimal threshold)
+    {
+        await _detectionService.SetRebalanceThreshold(threshold);
+        return Ok(new { Threshold = threshold });
+    }
 }

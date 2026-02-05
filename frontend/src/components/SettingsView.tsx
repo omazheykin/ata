@@ -97,6 +97,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
         state.maxDrawdownUsd,
         state.maxConsecutiveLosses,
       );
+      await apiService.setRebalanceThreshold(state.minRebalanceSkewThreshold);
       onClose();
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -339,6 +340,36 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                           minimize fees.
                         </p>
                       </div>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Rebalance Sensitivity
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0.01"
+                          max="0.5"
+                          step="0.01"
+                          value={state.minRebalanceSkewThreshold}
+                          onChange={(e) =>
+                            setState({
+                              ...state,
+                              minRebalanceSkewThreshold: parseFloat(
+                                e.target.value,
+                              ),
+                            })
+                          }
+                          className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <span className="text-sm font-black text-blue-400 w-12 text-right">
+                          {(state.minRebalanceSkewThreshold * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Min imbalance % required to trigger rebalancing.
+                      </p>
                     </div>
 
                     <div className="glass p-4 rounded-xl border border-white/5 flex items-center justify-between opacity-50 cursor-not-allowed">

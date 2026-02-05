@@ -167,4 +167,5 @@ export interface AppState {
     maxConsecutiveLosses: number;
     isSafetyKillSwitchTriggered: boolean;
     globalKillSwitchReason: string;
+    minRebalanceSkewThreshold: number;
 }

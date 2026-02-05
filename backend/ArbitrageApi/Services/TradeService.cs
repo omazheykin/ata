@@ -168,7 +168,8 @@ public class TradeService : BackgroundService
                 // Phase 3: Smart Decision
                 var window = await _rebalancingService.GetTrendAnalysisService().GetBestWindowAsync(stoppingToken);
                 
-                bool isStrongTrend = proposal.TrendDescription.Contains("Trend");
+                bool isStrongTrend = !string.IsNullOrWhiteSpace(proposal.TrendDescription) && 
+                                     !proposal.TrendDescription.Contains("Neutral", StringComparison.OrdinalIgnoreCase);
                 bool isLowActivityWindow = window?.IsCurrent ?? false;
 
                 if (isLowActivityWindow || isStrongTrend)

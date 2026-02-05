@@ -373,6 +373,15 @@ public class ArbitrageDetectionService : BackgroundService
         _persistenceService.SaveState(state);
     }
 
+    public async Task SetRebalanceThreshold(decimal threshold)
+    {
+        _logger.LogInformation("⚖️ Updating Rebalance Skew Threshold: {Threshold}", threshold);
+        var state = _persistenceService.GetState();
+        state.MinRebalanceSkewThreshold = threshold;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveRebalanceThresholdUpdate", threshold);
+    }
+
     private async Task PeriodicallyBroadcastStatusAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
