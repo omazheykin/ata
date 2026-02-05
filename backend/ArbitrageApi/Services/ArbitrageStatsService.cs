@@ -49,8 +49,8 @@ public class ArbitrageStatsService : BackgroundService
             using (var scope = _serviceProvider.CreateScope())
             {
                 var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
-                await dbContext.Database.EnsureCreatedAsync(stoppingToken);
-                _logger.LogInformation("✅ Database initialized successfully.");
+                await dbContext.Database.MigrateAsync(stoppingToken); // Use Migrate instead of EnsureCreated
+                _logger.LogInformation("✅ Database initialized and migrated successfully.");
 
                 // Phase 6: Bootstrap aggregation if missing (Delegate to Service)
                 await _bootstrapService.BootstrapAggregationAsync(dbContext, stoppingToken);
