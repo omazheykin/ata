@@ -146,7 +146,7 @@ public abstract class CoinbaseBaseState : IExchangeState
             var products = await cats.GetProductsAsync();
             Logger.LogInformation("Coinbase products fetched: {Count}", products.Count);
 
-            var supportedSymbols = new HashSet<string>(products.Select(p => p.ProductId));
+            var supportedSymbols = new HashSet<string>(products.Select(p => p.ProductId).Where(id => id != null).Select(id => id!));
 
             SymbolMapping = SymbolMapping
                 .Where(kv => supportedSymbols.Contains(kv.Value))

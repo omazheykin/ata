@@ -14,38 +14,29 @@ public class ArbitrageStatsService : BackgroundService
     private readonly ILogger<ArbitrageStatsService> _logger;
     private readonly ChannelProvider _channelProvider;
     private readonly RebalancingService _rebalancingService;
-    private readonly SemaphoreSlim _updateTrigger = new(0, 1);
+    private readonly StatsBootstrapService _bootstrapService;
     private readonly Type[] _parallelProcessors;
 
     public ArbitrageStatsService(
         IServiceProvider serviceProvider, 
         ILogger<ArbitrageStatsService> logger, 
         ChannelProvider channelProvider, 
-        RebalancingService rebalancingService)
+        RebalancingService rebalancingService,
+        StatsBootstrapService bootstrapService)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _channelProvider = channelProvider;
         _rebalancingService = rebalancingService;
+        _bootstrapService = bootstrapService;
 
         // Define parallel processors (to be executed via Task.WhenAll)
         _parallelProcessors = new[]
         {
             typeof(PersistenceProcessor),
             typeof(HeatmapProcessor),
-            typeof(SummaryProcessor),
-            typeof(BroadcastProcessor)
+            typeof(SummaryProcessor)
         };
-    }
-
-    public void TriggerUpdate()
-    {
-        try
-        {
-            if (_updateTrigger.CurrentCount == 0)
-                _updateTrigger.Release();
-        }
-        catch (ObjectDisposedException) { }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -61,8 +52,8 @@ public class ArbitrageStatsService : BackgroundService
                 await dbContext.Database.EnsureCreatedAsync(stoppingToken);
                 _logger.LogInformation("✅ Database initialized successfully.");
 
-                // Phase 6: Bootstrap aggregation if missing
-                await BootstrapAggregationAsync(dbContext, stoppingToken);
+                // Phase 6: Bootstrap aggregation if missing (Delegate to Service)
+                await _bootstrapService.BootstrapAggregationAsync(dbContext, stoppingToken);
             }
         }
         catch (Exception ex)
@@ -72,91 +63,8 @@ public class ArbitrageStatsService : BackgroundService
 
         var eventsTask = ProcessEventsAsync(stoppingToken);
         var transactionsTask = ProcessTransactionsAsync(stoppingToken);
-        var strategyTask = ProcessStrategyUpdatesAsync(stoppingToken);
 
-        await Task.WhenAll(eventsTask, transactionsTask, strategyTask);
-    }
-
-    private async Task ProcessStrategyUpdatesAsync(CancellationToken stoppingToken)
-    {
-        await Task.Yield(); // Ensure background processing starts
-        _logger.LogInformation("🧠 SMART STRATEGY: Loop is now ACTIVE and running.");
-        
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                var now = DateTime.UtcNow;
-                var day = now.DayOfWeek.ToString();
-                var hour = now.Hour;
-
-                _logger.LogInformation("🧠 SMART STRATEGY: Evaluating market conditions for {Day} {Hour}:00...", day, hour);
-
-                var response = await GetStatsAsync();
-                var currentHourDetail = response.Calendar.GetValueOrDefault(day.Substring(0, 3))?.GetValueOrDefault(hour.ToString("D2"));
-
-                var state = _serviceProvider.GetRequiredService<StatePersistenceService>().GetState();
-                if (!state.IsSmartStrategyEnabled)
-                {
-                    _logger.LogInformation("🧠 Strategy Update: Smart Strategy is DISABLED. Skipping update.");
-                    await _updateTrigger.WaitAsync(TimeSpan.FromMinutes(15), stoppingToken);
-                    continue;
-                }
-
-                decimal newThreshold = 0.1m; // Default
-                string reason = "Standard market conditions";
-                decimal volScore = 0;
-                decimal cScore = 0;
-                decimal sScore = 0;
-
-                if (currentHourDetail != null)
-                {
-                    volScore = currentHourDetail.VolatilityScore;
-                    // For the current hour update, we'll re-calculate to get the breakdown if needed, 
-                    // or just use the available VolatilityScore.
-                    // To get the reason more granular, let's use the VolatilityScore.
-
-                    if (volScore >= 0.7m)
-                    {
-                        newThreshold = 0.05m;
-                        reason = $"High activity (Score: {volScore:P0}). Opportunities are frequent and spreads are wide, allowing for a lower capture threshold.";
-                    }
-                    else if (volScore < 0.2m)
-                    {
-                        newThreshold = 0.15m;
-                        reason = $"Quiet market (Score: {volScore:P0}). Low frequency or narrow spreads detected; threshold is raised to avoid unprofitable trades.";
-                    }
-                    else
-                    {
-                        reason = $"Balanced conditions (Score: {volScore:P0}). Market activity is moderate; system is using a standard {newThreshold:P1} target.";
-                    }
-                }
-                else
-                {
-                    reason = $"Initial assessment. Insufficient historical data for {day} {hour}:00; using conservative {newThreshold:P1} base threshold.";
-                }
-
-                _logger.LogInformation("🧠 SMART STRATEGY: Pushing new threshold {Threshold}% to Detection Service. Reason: {Reason}", newThreshold, reason);
-                
-                await _channelProvider.StrategyUpdateChannel.Writer.WriteAsync(new StrategyUpdate
-                {
-                    MinProfitThreshold = newThreshold,
-                    Reason = reason,
-                    VolatilityScore = volScore,
-                    CountScore = cScore, // We'll leave these for now or refactor GetStats to include them
-                    SpreadScore = sScore
-                }, stoppingToken);
-
-                // Wait for next hour or 15 mins for re-evaluation OR manual trigger
-                await _updateTrigger.WaitAsync(TimeSpan.FromMinutes(15), stoppingToken);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in Strategy Update Loop");
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-            }
-        }
+        await Task.WhenAll(eventsTask, transactionsTask);
     }
 
     private async Task ProcessEventsAsync(CancellationToken stoppingToken)
@@ -252,104 +160,7 @@ public class ArbitrageStatsService : BackgroundService
         return events;
     }
 
-    public async Task BootstrapAggregationAsync(StatsDbContext dbContext, CancellationToken stoppingToken)
-    {
-        if (await dbContext.AggregatedMetrics.AnyAsync(stoppingToken))
-        {
-            _logger.LogInformation("📊 Aggregated metrics already exist. Skipping bootstrap.");
-            return;
-        }
-
-        _logger.LogInformation("📊 Bootstrapping aggregated metrics from existing events...");
-        
-        var totalEvents = await dbContext.ArbitrageEvents.CountAsync(stoppingToken);
-        _logger.LogInformation("📊 Total events to process: {Total}", totalEvents);
-        
-        // Load all metrics into memory for fast lookups
-        var metricsCache = new Dictionary<string, AggregatedMetric>();
-        
-        int processed = 0;
-        int batchSize = 5000; // Larger batches for better performance
-
-        while (true)
-        {
-            var events = await dbContext.ArbitrageEvents
-                .AsNoTracking()
-                .OrderBy(e => e.Timestamp)
-                .ThenBy(e => e.Id)
-                .Skip(processed)
-                .Take(batchSize)
-                .ToListAsync(stoppingToken);
-
-            if (events.Count == 0) break;
-
-            foreach (var e in events)
-            {
-                // Process this event into aggregated metrics (in-memory)
-                var timestamp = e.Timestamp;
-                var dayLong = timestamp.DayOfWeek.ToString();
-                var dayShort = dayLong.Substring(0, 3);
-                var hour = timestamp.Hour;
-                var spreadPercent = e.Spread * 100;
-                var avgDepth = (e.DepthBuy + e.DepthSell) / 2;
-
-                var metricKeys = new List<(string Category, string Key)>
-                {
-                    ("Pair", e.Pair),
-                    ("Hour", $"{dayShort}-{hour:D2}"),
-                    ("Day", dayLong),
-                    ("Direction", e.Direction),
-                    ("Global", "Total")
-                };
-
-                foreach (var (category, key) in metricKeys)
-                {
-                    var metricId = $"{category}:{key}";
-                    
-                    if (!metricsCache.TryGetValue(metricId, out var metric))
-                    {
-                        metric = new AggregatedMetric
-                        {
-                            Id = metricId,
-                            Category = category,
-                            MetricKey = key,
-                            EventCount = 0,
-                            SumSpread = 0,
-                            MaxSpread = 0,
-                            SumDepth = 0,
-                            LastUpdated = DateTime.UtcNow
-                        };
-                        metricsCache[metricId] = metric;
-                    }
-
-                    metric.EventCount++;
-                    metric.SumSpread += spreadPercent;
-                    metric.SumDepth += avgDepth;
-                    metric.LastUpdated = DateTime.UtcNow;
-
-                    if (spreadPercent > metric.MaxSpread)
-                    {
-                        metric.MaxSpread = spreadPercent;
-                    }
-                }
-            }
-
-            processed += events.Count;
-            
-            if (processed % 10000 == 0 || processed == totalEvents)
-            {
-                _logger.LogInformation("📊 Progress: {Processed}/{Total} events processed", processed, totalEvents);
-            }
-        }
-
-        // Save all metrics to database in one go
-        _logger.LogInformation("📊 Saving {Count} aggregated metrics to database...", metricsCache.Count);
-        dbContext.AggregatedMetrics.AddRange(metricsCache.Values);
-        await dbContext.SaveChangesAsync(stoppingToken);
-
-        _logger.LogInformation("✅ Aggregated metrics bootstrap complete. Created {Count} metrics from {Total} events.", 
-            metricsCache.Count, totalEvents);
-    }
+    // BootstrapAggregationAsync REMOVED (Extracted to StatsBootstrapService)
 
     public virtual async Task<StatsResponse> GetStatsAsync()
     {
@@ -396,8 +207,7 @@ public class ArbitrageStatsService : BackgroundService
                 AvgSpread = m.SumSpread / m.EventCount / 100
             });
 
-        // 4. Direction Distribution - Still requires scanning events for now unless we aggregate it too.
-        // Let's quickly aggregate it too for completeness.
+        // 4. Direction Distribution
         var directionMetrics = metrics.Where(m => m.Category == "Direction").ToList();
         if (directionMetrics.Any())
         {
@@ -406,12 +216,10 @@ public class ArbitrageStatsService : BackgroundService
         }
         else
         {
-            // Fallback for bootstrap that didn't have Directions (I'll update aggregator next)
             _logger.LogWarning("⚠️ Direction metrics missing in aggregation. Consider re-bootstrap.");
         }
 
-        // 5. Avg Series Duration - This one actually REQUIRES raw events to calculate properly.
-        // Process only last 1000 events for this to keep it fast.
+        // 5. Avg Series Duration
         var latestEvents = await dbContext.ArbitrageEvents
             .OrderByDescending(e => e.Timestamp)
             .Take(1000)
@@ -459,7 +267,7 @@ public class ArbitrageStatsService : BackgroundService
                     detail.AvgSpread = metric.SumSpread / metric.EventCount / 100;
                     detail.MaxSpread = metric.MaxSpread / 100;
                     detail.AvgDepth = metric.SumDepth / metric.EventCount;
-                    detail.DirectionBias = "N/A"; // Bias would need direction counts
+                    detail.DirectionBias = "N/A";
                     detail.VolatilityScore = CalculateVolatilityScoreFast(metric, maxHourlyCount);
                     detail.Zone = detail.VolatilityScore >= 0.7m ? "high_activity" : (detail.VolatilityScore >= 0.4m ? "normal" : "low_activity");
                 }
@@ -516,8 +324,7 @@ public class ArbitrageStatsService : BackgroundService
         var avgDepth = metric.SumDepth / metric.EventCount;
         var depthScore = Math.Min(avgDepth / 1000m, 1.0m);
 
-        // Stability Score - We can't do this purely from sums without extra counters.
-        // For now, assume moderate stability (0.5) to keep it simple.
+        // Stability Score
         var stabilityScore = 0.5m;
 
         return Math.Min((countScore * 0.4m) + (spreadScore * 0.3m) + (depthScore * 0.2m) + (stabilityScore * 0.1m), 1.0m);

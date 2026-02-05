@@ -3,6 +3,7 @@ using ArbitrageApi.Models;
 using ArbitrageApi.Services;
 using ArbitrageApi.Data;
 using ArbitrageApi.Services.Stats;
+using ArbitrageApi.Services.Strategies;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
@@ -114,6 +115,9 @@ builder.Services.AddSingleton<TradeService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<TradeService>());
 builder.Services.AddSingleton<ArbitrageStatsService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ArbitrageStatsService>());
+builder.Services.AddSingleton<SmartStrategyService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<SmartStrategyService>());
+builder.Services.AddTransient<StatsBootstrapService>();
 builder.Services.AddSingleton<ArbitrageExportService>();
 builder.Services.AddTransient<IStatsAggregator, StatsAggregator>();
 
@@ -122,7 +126,6 @@ builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.Normalizati
 builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.PersistenceProcessor>();
 builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.HeatmapProcessor>();
 builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.SummaryProcessor>();
-builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.BroadcastProcessor>();
 
 // Register background service as singleton so we can inject it into controller
 builder.Services.AddSingleton<ArbitrageDetectionService>();

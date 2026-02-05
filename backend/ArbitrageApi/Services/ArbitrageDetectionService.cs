@@ -1,6 +1,7 @@
 using ArbitrageApi.Models;
 using ArbitrageApi.Hubs;
 using ArbitrageApi.Services.Exchanges;
+using ArbitrageApi.Services.Strategies;
 using Microsoft.AspNetCore.SignalR;
 
 namespace ArbitrageApi.Services;
@@ -14,7 +15,7 @@ public class ArbitrageDetectionService : BackgroundService
     private readonly ArbitrageCalculator _calculator;
     private readonly ChannelProvider _channelProvider;
     private readonly StatePersistenceService _persistenceService;
-    private readonly ArbitrageStatsService _statsService;
+    private readonly SmartStrategyService _smartStrategyService;
     private readonly List<ArbitrageOpportunity> _recentOpportunities = new();
     private readonly object _lock = new();
     private bool _isSandboxMode = false;
@@ -37,7 +38,7 @@ public class ArbitrageDetectionService : BackgroundService
         ChannelProvider channelProvider,
         ArbitrageCalculator calculator,
         StatePersistenceService persistenceService,
-        ArbitrageStatsService statsService)
+        SmartStrategyService smartStrategyService)
     {
         _hubContext = hubContext;
         _logger = logger;
@@ -46,7 +47,7 @@ public class ArbitrageDetectionService : BackgroundService
         _channelProvider = channelProvider;
         _calculator = calculator;
         _persistenceService = persistenceService;
-        _statsService = statsService;
+        _smartStrategyService = smartStrategyService;
 
         // Load state from persistence
         var state = _persistenceService.GetState();
@@ -208,15 +209,7 @@ public class ArbitrageDetectionService : BackgroundService
         }
 
         // 2. Dashboard and Trading
-        decimal minOpportunityValue = 100m; // Default fallback
-        try
-        {
-             // Simplified for this context - ideally injected via IConfiguration
-             // Assuming _configuration is available or hardcoding for now based on previous step
-             // Let's stick to a safe default if not injecting IConfiguration right now to avoid constructor changes
-        }
-        catch {}
-
+        
         // Calculate total value of the opportunity in USD (Volume * Price)
         // Ensure strictly > 0 profit and meets minimum value threshold ($100)
         bool isValuableEnough = (opportunity.Volume * opportunity.BuyPrice) >= 100m;
@@ -314,7 +307,7 @@ public class ArbitrageDetectionService : BackgroundService
             });
 
             // Trigger the Stats service to recalculate RIGHT NOW
-            _statsService.TriggerUpdate();
+            _smartStrategyService.TriggerUpdate();
         }
     }
 
