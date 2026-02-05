@@ -58,7 +58,7 @@ const RebalancingPanel: React.FC<RebalancingPanelProps> = ({ rebalancing }) => {
               key={prop.asset}
               className={`glass p-3 rounded-lg border flex flex-col md:flex-row items-center justify-between gap-4 ${
                 prop.isViable
-                  ? "border-green-500/30 bg-green-500/50"
+                  ? "border-green-500/30 bg-green-500/10"
                   : "border-white/5"
               }`}
             >
