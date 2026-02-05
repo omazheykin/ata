@@ -16,7 +16,7 @@ public class RebalancingServiceTests
     private readonly Mock<IExchangeClient> _binanceClientMock;
     private readonly Mock<IExchangeClient> _coinbaseClientMock;
     private readonly Mock<IExchangeClient> _okxClientMock; // Added 3rd exchange
-    private readonly ITrendAnalysisService _trendService;
+    private readonly Mock<ITrendAnalysisService> _trendServiceMock; // Merged Mock
     private readonly ChannelProvider _channelProvider;
     private readonly Mock<StatePersistenceService> _persistenceServiceMock;
     private readonly Mock<IHubContext<ArbitrageHub>> _hubContextMock;
@@ -29,7 +29,12 @@ public class RebalancingServiceTests
         _binanceClientMock = new Mock<IExchangeClient>();
         _coinbaseClientMock = new Mock<IExchangeClient>();
         _okxClientMock = new Mock<IExchangeClient>();
-        _trendService = new ManualTrendService();
+        _trendServiceMock = new Mock<ITrendAnalysisService>();
+        
+        // Default setup to prevent NRE for Trend Service
+        _trendServiceMock.Setup(t => t.GetTrendAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AssetTrend { Prediction = "Neutral (Default Mock)" });
+            
         _channelProvider = new ChannelProvider();
         _hubContextMock = new Mock<IHubContext<ArbitrageHub>>();
 
@@ -43,25 +48,12 @@ public class RebalancingServiceTests
         // Default to just 2 for basic tests, override in specific tests if needed
         _clients = new List<IExchangeClient> { _binanceClientMock.Object, _coinbaseClientMock.Object };
         
-        // Note: RebalancingService takes IEnumerable, so we can pass the list.
-        // However, if we want to change the list per test, we might need to instantate service inside test or use a wrapper.
-        // Since constructor copies the list, we must instantiate _rebalancingService inside tests or use a setup method.
-        // For simplicity, I'll instantiate it in the constructor with 2 clients, and re-instantiate in the 3-client test.
-        
-        _rebalancingService = new RebalancingService(_loggerMock.Object, _clients, _trendService, _channelProvider, _persistenceServiceMock.Object, _hubContextMock.Object);
+        _rebalancingService = new RebalancingService(_loggerMock.Object, _clients, _trendServiceMock.Object, _channelProvider, _persistenceServiceMock.Object, _hubContextMock.Object);
         
         var mockClients = new Mock<IHubClients>();
         var mockClientProxy = new Mock<IClientProxy>();
         mockClients.Setup(c => c.All).Returns(mockClientProxy.Object);
         _hubContextMock.Setup(h => h.Clients).Returns(mockClients.Object);
-    }
-
-    private class ManualTrendService : ITrendAnalysisService
-    {
-        public Task<AssetTrend> GetTrendAsync(string asset, CancellationToken ct = default) => 
-            Task.FromResult(new AssetTrend { Prediction = "Neutral (Manual)" });
-        public Task<RebalanceWindow?> GetBestWindowAsync(CancellationToken ct = default) => 
-            Task.FromResult<RebalanceWindow?>(null);
     }
 
     private async Task InvokeUpdateMethod(RebalancingService service)
@@ -78,15 +70,16 @@ public class RebalancingServiceTests
         // Normalized Deviation = 0 / 2.0 = 0.
         _binanceClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = "BTC", Free = 1.0m } });
         _coinbaseClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = "BTC", Free = 1.0m } });
-
+        
         // Act
-        await InvokeUpdateMethod(_rebalancingService);
+        var method = typeof(RebalancingService).GetMethod("UpdateBalancesAndSkewsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(_rebalancingService, new object[] { CancellationToken.None })!;
 
         // Assert
+        // Mean = 1.0. Binance (1.0) -> Dev 0. Coinbase (1.0) -> Dev 0.
         _rebalancingService.GetDeviation("BTC", "Binance").Should().Be(0m);
-        _rebalancingService.GetDeviation("BTC", "Coinbase").Should().Be(0m);
     }
-
+    
     [Fact]
     public async Task TwoExchanges_AllOnBinance_ShouldHaveMaxDeviation()
     {
@@ -106,11 +99,55 @@ public class RebalancingServiceTests
     }
 
     [Fact]
+    public async Task UpdateBalancesAndSkews_AllOnCoinbase_ShouldResultInNegativeOneSkew()
+    {
+        // Arrange
+        _binanceClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = "BTC", Free = 0.0m } });
+        _coinbaseClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = "BTC", Free = 1.0m } });
+
+        // Act
+        await InvokeUpdateMethod(_rebalancingService);
+
+        // Assert
+        // Total 1.0. Mean 0.5.
+        // Coinbase: 1.0. Dev 0.5. Norm = 0.5/1.0 = 0.5. (Positive relative to mean, but negative direction?)
+        // Wait, logic is: Deviation = (Val - Mean) / Total.
+        // Binance (0) - 0.5 = -0.5. Norm = -0.5.
+        // Coinbase (1) - 0.5 = 0.5. Norm = 0.5.
+        _rebalancingService.GetDeviation("BTC", "Binance").Should().Be(-0.5m);
+        _rebalancingService.GetDeviation("BTC", "Coinbase").Should().Be(0.5m);
+    }
+
+    [Fact]
+    public async Task UpdateBalancesAndSkews_HighSkewLowFee_ShouldGenerateViableProposal()
+    {
+        // Arrange
+        var asset = "USDT";
+        _binanceClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = asset, Free = 10000m } });
+        _coinbaseClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = asset, Free = 0m } });
+        
+        _binanceClientMock.Setup(c => c.GetWithdrawalFeeAsync(asset)).ReturnsAsync(5.0m);
+        _trendServiceMock.Setup(t => t.GetTrendAsync(asset, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AssetTrend { Prediction = "Neutral" });
+
+        // Act
+        await InvokeUpdateMethod(_rebalancingService);
+
+        // Assert
+        var proposals = _rebalancingService.GetProposals();
+        proposals.Should().NotBeEmpty();
+        var p = proposals.First(x => x.Asset == asset);
+        
+        p.IsViable.Should().BeTrue();
+        p.CostPercentage.Should().Be(0.1m);
+    }
+
+    [Fact]
     public async Task ThreeExchanges_MixedBalance_ShouldCalculateCorrectDeviations()
     {
         // Arrange
         var clients3 = new List<IExchangeClient> { _binanceClientMock.Object, _coinbaseClientMock.Object, _okxClientMock.Object };
-        var service3 = new RebalancingService(_loggerMock.Object, clients3, _trendService, _channelProvider, _persistenceServiceMock.Object, _hubContextMock.Object);
+        var service3 = new RebalancingService(_loggerMock.Object, clients3, _trendServiceMock.Object, _channelProvider, _persistenceServiceMock.Object, _hubContextMock.Object);
 
         // Scenario:
         // Binance: 150
@@ -149,5 +186,36 @@ public class RebalancingServiceTests
         p.Direction.Should().Contain("Binance");
         p.Direction.Should().Contain("OKX");
         p.Amount.Should().Be(50m);
+    }
+
+    [Fact]
+    public async Task UpdateBalancesAndSkews_ShouldIncludeTrendData_InProposal()
+    {
+        // Arrange
+        var asset = "ETH";
+        var expectedTrend = "Strong Buy (Binance)";
+        
+        // Setup Imbalance to trigger proposal
+        _binanceClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = asset, Free = 10m } });
+        _coinbaseClientMock.Setup(c => c.GetBalancesAsync()).ReturnsAsync(new List<Balance> { new Balance { Asset = asset, Free = 0m } });
+        _binanceClientMock.Setup(c => c.GetWithdrawalFeeAsync(asset)).ReturnsAsync(0.01m); // Low fee
+
+        // Setup Trend Mock to return specific string
+        _trendServiceMock.Setup(t => t.GetTrendAsync(asset, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AssetTrend { Prediction = expectedTrend });
+
+        // Act
+        var method = typeof(RebalancingService).GetMethod("UpdateBalancesAndSkewsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(_rebalancingService, new object[] { CancellationToken.None })!;
+
+        // Assert
+        var proposals = _rebalancingService.GetProposals();
+        var proposal = proposals.First(p => p.Asset == asset);
+
+        // Verify Trend Service was called
+        _trendServiceMock.Verify(t => t.GetTrendAsync(asset, It.IsAny<CancellationToken>()), Times.Once);
+        
+        // Verify Trend String is in Proposal
+        proposal.TrendDescription.Should().Be(expectedTrend);
     }
 }
