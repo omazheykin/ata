@@ -338,6 +338,29 @@ public class ArbitrageStatsService : BackgroundService
             }
         }
 
+        // 8. Realized Profit and Success Rate (NEW)
+        var transactions = await dbContext.Transactions
+            .Where(t => t.Type == "Arbitrage") // Filter only arbitrage trades
+            .ToListAsync();
+
+        if (transactions.Any())
+        {
+            response.Summary.TotalRealizedProfit = transactions.Sum(t => t.RealizedProfit);
+            
+            var totalCount = transactions.Count;
+            var successfulExecutions = transactions.Count(t => t.Status == "Success");
+            var profitableTrades = transactions.Count(t => t.RealizedProfit > 0);
+
+            response.Summary.SuccessRate = (double)successfulExecutions / totalCount;
+            response.Summary.ProfitabilityRate = (double)profitableTrades / totalCount;
+        }
+        else
+        {
+            response.Summary.TotalRealizedProfit = 0m;
+            response.Summary.SuccessRate = 0;
+            response.Summary.ProfitabilityRate = 0;
+        }
+
         return response;
     }
 

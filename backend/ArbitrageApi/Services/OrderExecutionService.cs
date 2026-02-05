@@ -177,6 +177,27 @@ public class OrderExecutionService
 
     private Transaction RecordTransaction(ArbitrageOpportunity opportunity, OrderResponse buy, OrderResponse? sell, string status)
     {
+        // PnL Calculation
+        decimal buyPrice = buy.AveragePrice ?? buy.Price ?? 0m;
+        decimal buyQty = buy.ExecutedQuantity;
+        decimal buyCost = buyPrice * buyQty;
+
+        decimal sellPrice = sell?.AveragePrice ?? sell?.Price ?? 0m;
+        decimal sellQty = sell?.ExecutedQuantity ?? 0m;
+        decimal sellProceeds = sellPrice * sellQty;
+
+        // Estimate fees if not provided by exchange (0.1% taker fee)
+        decimal buyFee = buy.Fee > 0 ? buy.Fee : (buyCost * 0.001m);
+        decimal sellFee = (sell?.Fee ?? 0) > 0 ? sell!.Fee : (sellProceeds * 0.001m);
+        decimal totalFees = buyFee + sellFee;
+
+        // Realized Profit = (Sell Proceeds - Buy Cost) - Total Fees
+        decimal realizedProfit = 0m;
+        if (status == "Success" && sell != null)
+        {
+            realizedProfit = (sellProceeds - buyCost) - totalFees;
+        }
+
         var transaction = new Transaction
         {
             Id = Guid.NewGuid(),
@@ -185,12 +206,17 @@ public class OrderExecutionService
             Asset = opportunity.Asset,
             Amount = buy.ExecutedQuantity,
             Exchange = $"{opportunity.BuyExchange} → {opportunity.SellExchange}",
-            Price = buy.AveragePrice ?? buy.Price ?? 0m,
-            Fee = ((buy.Price ?? 0m) * buy.ExecutedQuantity * 0.001m) + ((sell?.Price ?? 0m) * (sell?.ExecutedQuantity ?? 0m) * 0.001m),
-            Profit = status == "Success" && sell?.Price != null && buy.Price != null 
-                ? (sell.Price.Value - buy.Price.Value) * buy.ExecutedQuantity 
-                : 0m,
+            Price = buyPrice,
+            Fee = totalFees, // Legacy Fee field (Projected/Estimated)
+            Profit = (sellPrice - buyPrice) * buyQty, // Legacy Profit field (Gross / Projected)
             Status = status,
+            
+            // New PnL Fields
+            RealizedProfit = realizedProfit,
+            TotalFees = totalFees,
+            BuyCost = buyCost,
+            SellProceeds = sellProceeds,
+
             BuyOrderId = buy.OrderId,
             SellOrderId = sell?.OrderId,
             BuyOrderStatus = buy.Status.ToString(),

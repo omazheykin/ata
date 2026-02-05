@@ -72,6 +72,10 @@ public class OrderResponse
     public DateTime? UpdatedAt { get; set; }
     public DateTime Timestamp { get; set; }
     public string? ErrorMessage { get; set; }
+    
+    // Fee Info
+    public decimal Fee { get; set; }
+    public string FeeCurrency { get; set; } = string.Empty;
 }
 
 /// <summary>

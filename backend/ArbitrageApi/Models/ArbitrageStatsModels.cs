@@ -8,6 +8,11 @@ public class StatsSummary
     public decimal GlobalVolatilityScore { get; set; }
     public Dictionary<string, int> DirectionDistribution { get; set; } = new();
     public double AvgSeriesDuration { get; set; }
+    
+    // PnL Stats
+    public decimal TotalRealizedProfit { get; set; }
+    public double SuccessRate { get; set; } // Execution Success (Status == "Success")
+    public double ProfitabilityRate { get; set; } // Financial success (RealizedProfit > 0)
 }
 
 public class PairStats
