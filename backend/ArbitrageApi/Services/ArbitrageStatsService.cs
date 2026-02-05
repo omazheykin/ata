@@ -347,13 +347,18 @@ public class ArbitrageStatsService : BackgroundService
         {
             response.Summary.TotalRealizedProfit = transactions.Sum(t => t.RealizedProfit);
             
-            var successfulTrades = transactions.Count(t => t.RealizedProfit > 0);
-            response.Summary.SuccessRate = (double)successfulTrades / transactions.Count;
+            var totalCount = transactions.Count;
+            var successfulExecutions = transactions.Count(t => t.Status == "Success");
+            var profitableTrades = transactions.Count(t => t.RealizedProfit > 0);
+
+            response.Summary.SuccessRate = (double)successfulExecutions / totalCount;
+            response.Summary.ProfitabilityRate = (double)profitableTrades / totalCount;
         }
         else
         {
             response.Summary.TotalRealizedProfit = 0m;
             response.Summary.SuccessRate = 0;
+            response.Summary.ProfitabilityRate = 0;
         }
 
         return response;

@@ -11,7 +11,8 @@ public class StatsSummary
     
     // PnL Stats
     public decimal TotalRealizedProfit { get; set; }
-    public double SuccessRate { get; set; }
+    public double SuccessRate { get; set; } // Execution Success (Status == "Success")
+    public double ProfitabilityRate { get; set; } // Financial success (RealizedProfit > 0)
 }
 
 public class PairStats
