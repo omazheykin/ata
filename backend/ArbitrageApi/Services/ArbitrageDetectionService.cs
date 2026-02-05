@@ -338,6 +338,50 @@ public class ArbitrageDetectionService : BackgroundService
         await _hubContext.Clients.All.SendAsync("ReceiveFeeModeUpdate", useTakerFees);
     }
 
+    public async Task SetAutoRebalance(bool enabled)
+    {
+        _logger.LogInformation("🔄 Switching Auto-Rebalance to: {Status}", enabled ? "ENABLED" : "DISABLED");
+        var state = _persistenceService.GetState();
+        state.IsAutoRebalanceEnabled = enabled;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveAutoRebalanceUpdate", enabled);
+    }
+
+    public async Task ResetSafetyKillSwitch()
+    {
+        _logger.LogWarning("🛡️ User requested Safety Kill-Switch RESET.");
+        var state = _persistenceService.GetState();
+        state.IsSafetyKillSwitchTriggered = false;
+        state.GlobalKillSwitchReason = string.Empty;
+        _persistenceService.SaveState(state);
+
+        await _hubContext.Clients.All.SendAsync("ReceiveSafetyUpdate", new {
+            isTriggered = false,
+            reason = string.Empty,
+            timestamp = DateTime.UtcNow
+        });
+    }
+
+    public async Task SetSafetyLimits(decimal maxDrawdownUsd, int maxConsecutiveLosses)
+    {
+        _logger.LogInformation("🛡️ Updating Safety Limits: Drawdown=${Drawdown}, MaxConsecutiveLosses={Losses}", 
+            maxDrawdownUsd, maxConsecutiveLosses);
+        
+        var state = _persistenceService.GetState();
+        state.MaxDrawdownUsd = maxDrawdownUsd;
+        state.MaxConsecutiveLosses = maxConsecutiveLosses;
+        _persistenceService.SaveState(state);
+    }
+
+    public async Task SetRebalanceThreshold(decimal threshold)
+    {
+        _logger.LogInformation("⚖️ Updating Rebalance Skew Threshold: {Threshold}", threshold);
+        var state = _persistenceService.GetState();
+        state.MinRebalanceSkewThreshold = threshold;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveRebalanceThresholdUpdate", threshold);
+    }
+
     private async Task PeriodicallyBroadcastStatusAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)

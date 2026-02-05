@@ -45,9 +45,24 @@ public class HourDetail
 
 public class RebalancingInfo
 {
-    public Dictionary<string, decimal> AssetSkews { get; set; } = new(); // -1.0 (heavy Coinbase) to 1.0 (heavy Binance)
+    public Dictionary<string, decimal> AssetSkews { get; set; } = new(); // Legacy support
     public string Recommendation { get; set; } = string.Empty;
     public decimal EfficiencyScore { get; set; }
+    
+    // New detailed breakdown
+    public List<RebalancingProposal> Proposals { get; set; } = new();
+}
+
+public class RebalancingProposal
+{
+    public string Asset { get; set; } = string.Empty;
+    public decimal Skew { get; set; }
+    public string Direction { get; set; } = string.Empty; // "Binance -> Coinbase"
+    public decimal Amount { get; set; }
+    public decimal EstimatedFee { get; set; }
+    public decimal CostPercentage { get; set; } // Fee / Amount
+    public bool IsViable { get; set; } // True if cost < 1% (configurable)
+    public string TrendDescription { get; set; } = string.Empty; // "Binance-ward Trend (24h)"
 }
 
 public class StatsResponse

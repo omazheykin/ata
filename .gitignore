@@ -26,3 +26,9 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# SQLite
+backend/ArbitrageApi/*.db
+backend/ArbitrageApi/*.db-shm
+backend/ArbitrageApi/*.db-wal
+backend/ArbitrageApi/appstate.json

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ArbitrageApi.Data;
 using ArbitrageApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -50,7 +51,7 @@ public class StatsBootstrapService
                 // Process this event into aggregated metrics (in-memory)
                 var timestamp = e.Timestamp;
                 var dayLong = timestamp.DayOfWeek.ToString();
-                var dayShort = dayLong.Substring(0, 3);
+                var dayShort = timestamp.ToString("ddd", CultureInfo.InvariantCulture);
                 var hour = timestamp.Hour;
                 var spreadPercent = e.Spread * 100;
                 var avgDepth = (e.DepthBuy + e.DepthSell) / 2;

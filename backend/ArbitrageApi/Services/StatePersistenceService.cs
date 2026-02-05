@@ -6,6 +6,7 @@ public class AppState
 {
     public bool IsSandboxMode { get; set; } = false;
     public bool IsAutoTradeEnabled { get; set; } = false;
+    public bool IsAutoRebalanceEnabled { get; set; } = false;
     public decimal MinProfitThreshold { get; set; } = 0.5m;
     public bool IsSmartStrategyEnabled { get; set; } = true;
     public decimal SafeBalanceMultiplier { get; set; } = 0.3m;
@@ -16,6 +17,15 @@ public class AppState
         { "ETHUSDT", 0.05m },
         { "SOLUSDT", 0.15m }
     };
+
+    // Phase 4: Safety Kill-Switches
+    public decimal MaxDrawdownUsd { get; set; } = 50.0m; // Stop if lost $50
+    public int MaxConsecutiveLosses { get; set; } = 3;   // Stop if 3 fails in a row
+    public bool IsSafetyKillSwitchTriggered { get; set; } = false;
+    public string GlobalKillSwitchReason { get; set; } = string.Empty;
+
+    // PR Feedback Updates
+    public decimal MinRebalanceSkewThreshold { get; set; } = 0.1m; // 10% default
 }
 
 public class StatePersistenceService

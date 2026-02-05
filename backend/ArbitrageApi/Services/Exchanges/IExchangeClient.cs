@@ -11,6 +11,8 @@ public interface IExchangeClient
     Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
     Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync();
     Task<List<Balance>> GetBalancesAsync();
+    Task<decimal?> GetWithdrawalFeeAsync(string asset);
+    Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
     void SetSandboxMode(bool enabled);
 
     /// <summary>

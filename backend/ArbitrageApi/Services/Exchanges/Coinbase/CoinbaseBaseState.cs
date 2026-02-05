@@ -78,6 +78,24 @@ public abstract class CoinbaseBaseState : IExchangeState
     }
     public abstract Task<List<Balance>> GetBalancesAsync();
 
+    public virtual Task<decimal?> GetWithdrawalFeeAsync(string asset)
+    {
+        // Mock/Default unique values to differentiate from Binance (for testing arbitrage/rebalancing logic)
+        var fee = asset.ToUpper() switch
+        {
+            "BTC" => 0.0001m, // Cheaper than Binance?
+            "ETH" => 0.001m,
+            "USDT" => 2.0m,
+            "USDC" => 0.0m, // Coinbase often has free USDC sends
+            "SOL" => 0.01m,
+            "XRP" => 0.0m,
+            _ => 0.5m
+        };
+        return Task.FromResult<decimal?>(fee);
+    }
+
+    public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+    
     public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         try

@@ -109,6 +109,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ArbitrageApi.Servi
 // Register Services
 builder.Services.AddSingleton<ChannelProvider>();
 builder.Services.AddSingleton<StatePersistenceService>();
+builder.Services.AddSingleton<ITrendAnalysisService, TrendAnalysisService>();
 builder.Services.AddSingleton<RebalancingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RebalancingService>());
 builder.Services.AddSingleton<TradeService>();
@@ -130,6 +131,9 @@ builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.SummaryProc
 // Register background service as singleton so we can inject it into controller
 builder.Services.AddSingleton<ArbitrageDetectionService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ArbitrageDetectionService>());
+
+builder.Services.AddSingleton<SafetyMonitoringService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<SafetyMonitoringService>());
 
 var app = builder.Build();
 

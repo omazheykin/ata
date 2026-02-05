@@ -10,4 +10,5 @@ public class ChannelProvider
     public Channel<Transaction> TransactionChannel { get; } = Channel.CreateUnbounded<Transaction>();
     public Channel<string> MarketUpdateChannel { get; } = Channel.CreateUnbounded<string>();
     public Channel<StrategyUpdate> StrategyUpdateChannel { get; } = Channel.CreateUnbounded<StrategyUpdate>();
+    public Channel<RebalancingProposal> RebalanceChannel { get; } = Channel.CreateUnbounded<RebalancingProposal>();
 }

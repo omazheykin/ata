@@ -35,6 +35,12 @@ public class BinanceRealState : BinanceBaseState
         }
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        // POST /sapi/v1/capital/withdraw/apply (Mock for now)
+        throw new NotImplementedException("Binance real withdrawals not yet enabled for safety.");
+    }
+
     public override async Task<List<Balance>> GetBalancesAsync()
     {
         try

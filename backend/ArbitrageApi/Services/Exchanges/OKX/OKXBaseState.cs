@@ -85,5 +85,23 @@ public abstract class OKXBaseState : IOKXState
     public abstract Task<Dictionary<string, ExchangePrice>> GetPricesAsync(string[] symbols);
     public abstract Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20);
     public abstract Task<List<Balance>> GetBalancesAsync();
+    
+    public virtual Task<decimal?> GetWithdrawalFeeAsync(string asset)
+    {
+        var fee = asset.ToUpper() switch
+        {
+            "BTC" => 0.0004m,
+            "ETH" => 0.003m,
+            "USDT" => 4.0m,
+            "USDC" => 4.0m,
+            "SOL" => 0.01m,
+            "XRP" => 0.25m,
+            _ => 1.0m
+        };
+        return Task.FromResult<decimal?>(fee);
+    }
+
+    public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+    
     public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
 }

@@ -72,10 +72,22 @@ export interface HourDetail {
     zone: string;
 }
 
+export interface RebalancingProposal {
+    asset: string;
+    skew: number;
+    direction: string;
+    amount: number;
+    estimatedFee: number;
+    costPercentage: number;
+    isViable: boolean;
+    trendDescription?: string;
+}
+
 export interface RebalancingInfo {
     assetSkews: Record<string, number>;
     recommendation: string;
     efficiencyScore: number;
+    proposals?: RebalancingProposal[];
 }
 
 export interface StatsSummary {
@@ -145,9 +157,15 @@ export interface MarketPriceUpdate {
 export interface AppState {
     isSandboxMode: boolean;
     isAutoTradeEnabled: boolean;
+    isAutoRebalanceEnabled: boolean;
     minProfitThreshold: number;
     isSmartStrategyEnabled: boolean;
     safeBalanceMultiplier: number;
     useTakerFees: boolean;
     pairThresholds: Record<string, number>;
+    maxDrawdownUsd: number;
+    maxConsecutiveLosses: number;
+    isSafetyKillSwitchTriggered: boolean;
+    globalKillSwitchReason: string;
+    minRebalanceSkewThreshold: number;
 }

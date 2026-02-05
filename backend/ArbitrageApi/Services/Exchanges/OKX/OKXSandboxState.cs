@@ -63,6 +63,12 @@ public class OKXSandboxState : OKXBaseState
         return Task.FromResult(result);
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        Logger.LogInformation("🧪 [Sandbox] Mock OKX Withdrawal of {Amount} {Asset} to {Address}", amount, asset, address);
+        return Task.FromResult($"mock_okx_tx_{Guid.NewGuid()}");
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         _balances.AddOrUpdate(asset, amount, (_, old) => old + amount);

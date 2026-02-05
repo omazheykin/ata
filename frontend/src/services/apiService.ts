@@ -121,6 +121,26 @@ export const apiService = {
         const response = await apiClient.post<{ enabled: boolean }>(`/settings/taker-fees?enabled=${enabled}`);
         return response.data;
     },
+    
+    async toggleAutoRebalance(enabled: boolean): Promise<{ enabled: boolean }> {
+        const response = await apiClient.post<{ enabled: boolean }>(`/settings/auto-rebalance?enabled=${enabled}`);
+        return response.data;
+    },
+
+    async resetSafetyKillSwitch(): Promise<{ success: boolean }> {
+        const response = await apiClient.post<{ success: boolean }>('/settings/safety-reset');
+        return response.data;
+    },
+
+    async setSafetyLimits(drawdown: number, losses: number): Promise<{ drawdown: number, losses: number }> {
+        const response = await apiClient.post<{ drawdown: number, losses: number }>(`/settings/safety-limits?drawdown=${drawdown}&losses=${losses}`);
+        return response.data;
+    },
+
+    async setRebalanceThreshold(threshold: number): Promise<{ threshold: number }> {
+        const response = await apiClient.post<{ threshold: number }>(`/settings/rebalance-threshold?threshold=${threshold}`);
+        return response.data;
+    },
 
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {

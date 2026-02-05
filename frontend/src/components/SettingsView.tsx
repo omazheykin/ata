@@ -71,6 +71,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
     setNewPair("");
   };
 
+  const handleResetSafety = async () => {
+    if (!state) return;
+    try {
+      await apiService.resetSafetyKillSwitch();
+      setState({
+        ...state,
+        isSafetyKillSwitchTriggered: false,
+        globalKillSwitchReason: "",
+      });
+    } catch (error) {
+      console.error("Error resetting safety switch:", error);
+    }
+  };
+
   const handleSave = async () => {
     if (!state) return;
     try {
@@ -78,6 +92,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
       await apiService.setPairThresholds(state.pairThresholds);
       await apiService.setSafeMultiplier(state.safeBalanceMultiplier);
       await apiService.setUseTakerFees(state.useTakerFees);
+      await apiService.toggleAutoRebalance(state.isAutoRebalanceEnabled);
+      await apiService.setSafetyLimits(
+        state.maxDrawdownUsd,
+        state.maxConsecutiveLosses,
+      );
+      await apiService.setRebalanceThreshold(state.minRebalanceSkewThreshold);
       onClose();
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -201,6 +221,172 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                           ? "Uses market order fees (Safer)"
                           : "Uses limit order fees (Riskier)"}
                       </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Phase 4: Safety & Kill-Switches */}
+                <section>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">
+                    Safety Kill-Switches
+                  </h3>
+                  {state.isSafetyKillSwitchTriggered && (
+                    <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl animate-pulse">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-black text-red-400 uppercase">
+                            🚨 System Paused by Robot Friend
+                          </p>
+                          <p className="text-xs text-red-300 italic mt-1">
+                            {state.globalKillSwitchReason}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleResetSafety}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-[10px] font-black uppercase rounded-lg transition-all shadow-lg shadow-red-500/20"
+                        >
+                          Reset Safety Switch
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Max 24h Drawdown (USD)
+                      </label>
+                      <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                        <span className="text-gray-500 font-bold">$</span>
+                        <input
+                          type="number"
+                          value={state.maxDrawdownUsd}
+                          onChange={(e) =>
+                            setState({
+                              ...state,
+                              maxDrawdownUsd: parseFloat(e.target.value),
+                            })
+                          }
+                          className="bg-transparent text-sm font-bold text-blue-400 w-full outline-none"
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Pauses trading if realized loss exceeds this amount.
+                      </p>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Consecutive Loss Trigger
+                      </label>
+                      <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                        <input
+                          type="number"
+                          value={state.maxConsecutiveLosses}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10);
+                            setState({
+                              ...state,
+                              maxConsecutiveLosses: Number.isNaN(value)
+                                ? state.maxConsecutiveLosses
+                                : value,
+                            });
+                          }}
+                          className="bg-transparent text-sm font-bold text-blue-400 w-full outline-none"
+                        />
+                        <span className="text-gray-500 font-bold text-[10px] uppercase whitespace-nowrap">
+                          Trades
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Pauses trading if X trades fail in a row.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Automation & Rebalancing */}
+                <section>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">
+                    Automation & Rebalancing
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">
+                            Smart Rebalancing
+                          </label>
+                          <p className="text-[10px] text-gray-500 italic">
+                            Automate fund transfers between exchanges.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setState({
+                              ...state,
+                              isAutoRebalanceEnabled:
+                                !state.isAutoRebalanceEnabled,
+                            })
+                          }
+                          className={`w-12 h-6 rounded-full transition-all relative ${state.isAutoRebalanceEnabled ? "bg-green-500" : "bg-white/10"}`}
+                        >
+                          <div
+                            className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${state.isAutoRebalanceEnabled ? "left-7" : "left-1"}`}
+                          />
+                        </button>
+                      </div>
+                      <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                        <p className="text-[9px] text-blue-300">
+                          ℹ️ Optimized execution: moves funds only during{" "}
+                          <b>low-activity windows</b> or <b>strong trends</b> to
+                          minimize fees.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Rebalance Sensitivity
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0.01"
+                          max="0.5"
+                          step="0.01"
+                          value={state.minRebalanceSkewThreshold}
+                          onChange={(e) =>
+                            setState({
+                              ...state,
+                              minRebalanceSkewThreshold: parseFloat(
+                                e.target.value,
+                              ),
+                            })
+                          }
+                          className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <span className="text-sm font-black text-blue-400 w-12 text-right">
+                          {(state.minRebalanceSkewThreshold * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Min imbalance % required to trigger rebalancing.
+                      </p>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5 flex items-center justify-between opacity-50 cursor-not-allowed">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">
+                          Trend-Aware Trading
+                        </label>
+                        <p className="text-[10px] text-gray-500 italic">
+                          Adjust trade size based on market direction.
+                        </p>
+                      </div>
+                      <div className="w-12 h-6 rounded-full bg-white/5 relative">
+                        <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white/20" />
+                      </div>
                     </div>
                   </div>
                 </section>

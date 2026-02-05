@@ -1,3 +1,4 @@
+using System.Globalization;
 using ArbitrageApi.Data;
 using ArbitrageApi.Models;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ public class StatsAggregator : IStatsAggregator
     {
         var timestamp = arbitrageEvent.Timestamp;
         var dayLong = timestamp.DayOfWeek.ToString();
-        var dayShort = dayLong.Substring(0, 3);
+        var dayShort = timestamp.ToString("ddd", CultureInfo.InvariantCulture);
         var hour = timestamp.Hour;
         var spreadPercent = arbitrageEvent.Spread * 100;
         var avgDepth = (arbitrageEvent.DepthBuy + arbitrageEvent.DepthSell) / 2;

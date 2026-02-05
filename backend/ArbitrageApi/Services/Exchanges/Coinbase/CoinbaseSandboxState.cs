@@ -52,6 +52,12 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         return Task.FromResult(result);
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        Logger.LogInformation("🧪 [Sandbox] Mock Coinbase Withdrawal of {Amount} {Asset} to {Address}", amount, asset, address);
+        return Task.FromResult($"mock_cb_tx_{Guid.NewGuid()}");
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         _balances.AddOrUpdate(asset, amount, (_, old) => old + amount);
