@@ -250,9 +250,13 @@ public class TradeService : BackgroundService
             }
 
             // In a real system, we'd need the deposit address from the TARGET exchange.
-            // For now, we'll use a placeholder or config.
-            string depositAddress = "MOCK_ADDRESS_REPLACE_WITH_REAL";
-            
+            // For now, require it to be configured via environment.
+            string depositAddress = Environment.GetEnvironmentVariable("REBALANCE_DEPOSIT_ADDRESS");
+            if (string.IsNullOrWhiteSpace(depositAddress))
+            {
+                _logger.LogError("Auto-rebalance deposit address is not configured. Set REBALANCE_DEPOSIT_ADDRESS before enabling auto-rebalance.");
+                return false;
+            }
             var txId = await sourceClient.WithdrawAsync(proposal.Asset, proposal.Amount, depositAddress);
             
             _logger.LogInformation("✅ [AUTO-REBALANCE] Transfer submitted! TxId: {TxId}", txId);
