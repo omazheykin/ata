@@ -17,10 +17,11 @@ public class CoinbaseClient : IExchangeClient
 
     public string ExchangeName => "Coinbase";
 
-    public CoinbaseClient(HttpClient httpClient, ILogger<CoinbaseClient> logger, IConfiguration configuration)
+    public CoinbaseClient(HttpClient httpClient, ILogger<CoinbaseClient> logger, IConfiguration configuration, bool isSandboxMode = false)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _isSandbox = isSandboxMode;
 
         var realApiKey = configuration["Coinbase:ApiKey"] ?? string.Empty;
         var realApiSecret = configuration["Coinbase:ApiSecret"] ?? string.Empty;
@@ -28,10 +29,9 @@ public class CoinbaseClient : IExchangeClient
         var sandboxApiSecret = configuration["Coinbase:SandboxApiSecret"] ?? string.Empty;
 
         _realState = new CoinbaseRealState(httpClient, logger, realApiKey, realApiSecret);
-        _sandboxState = new CoinbaseSandboxState(httpClient, logger, sandboxApiKey, sandboxApiSecret);
+        _sandboxState = new CoinbaseSandboxState(httpClient, logger, sandboxApiKey, sandboxApiSecret, _realState);
 
-        _currentState = _realState;
-        _isSandbox = false;
+        _currentState = _isSandbox ? _sandboxState : _realState;
 
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "ArbitrageApi");
         _logger.LogInformation("CoinbaseClient created. HashCode: {HashCode}", GetHashCode());
@@ -51,6 +51,7 @@ public class CoinbaseClient : IExchangeClient
     }
 
     public Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync() => _currentState.GetSpotFeesAsync();
+    public Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync() => _currentState.GetCachedFeesAsync();
     public Task<ExchangePrice?> GetPriceAsync(string symbol) => _currentState.GetPriceAsync(symbol);
     public Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols) => _currentState.GetPricesAsync(symbols);
     public Task<List<Balance>> GetBalancesAsync() => _currentState.GetBalancesAsync();

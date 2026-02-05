@@ -5,22 +5,25 @@ namespace ArbitrageApi.Services.Exchanges;
 public class BinanceSandboxState : BinanceBaseState
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, decimal> _balances = new();
+    private readonly IExchangeState _realState;
 
-    public BinanceSandboxState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret) 
+    public BinanceSandboxState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, IExchangeState realState) 
         : base(httpClient, logger, apiKey, apiSecret, "https://testnet.binance.vision")
     {
+        _realState = realState;
+
         // Initialize with default funds
         _balances["USD"] = 10000m;
-        _balances["BTC"] = 0.5m;
-        _balances["ETH"] = 5.0m;
-        _balances["BNB"] = 50.0m;
-        _balances["SOL"] = 100.0m;
-        _balances["XRP"] = 5000.0m;
-        _balances["ADA"] = 10000.0m;
-        _balances["AVAX"] = 100.0m;
-        _balances["DOT"] = 500.0m;
-        _balances["MATIC"] = 5000.0m;
-        _balances["LINK"] = 200.0m;
+        _balances["BTC"] = 10000m;
+        _balances["ETH"] = 10000m;
+        _balances["BNB"] = 10000m;
+        _balances["SOL"] = 10000m;
+        _balances["XRP"] = 10000m;
+        _balances["ADA"] = 10000m;
+        _balances["AVAX"] = 10000m;
+        _balances["DOT"] = 10000m;
+        _balances["MATIC"] = 10000m;
+        _balances["LINK"] = 10000m;
     }
 
     public override Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
@@ -57,9 +60,14 @@ public class BinanceSandboxState : BinanceBaseState
             
             var orderId = $"SANDBOX_{Guid.NewGuid().ToString().Substring(0, 8)}";
             
-            // Simple price discovery for balance updates
+            // Use Real Price for execution math
             var priceInfo = await GetPriceAsync(symbol);
             var currentPrice = price ?? priceInfo?.Price ?? 0m;
+
+            if (currentPrice <= 0)
+            {
+                return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = "Could not fetch real price for execution" };
+            }
 
             // Robust asset parsing
             var asset = symbol.Replace("USDT", "").Replace("USD", "");
@@ -119,35 +127,8 @@ public class BinanceSandboxState : BinanceBaseState
     
     public override Task<ExchangePrice?> GetPriceAsync(string symbol)
     {
-        // FULL ISOLATION: Return simulated price immediately without network calls
-        return Task.FromResult(GetSimulatedPrice(symbol));
-    }
-
-    private ExchangePrice? GetSimulatedPrice(string symbol)
-    {
-        // Fallback to a reasonable simulated price if the testnet is down
-        decimal price = symbol switch
-        {
-            "BTCUSDT" => 50000m,
-            "ETHUSDT" => 2500m,
-            "BNBUSDT" => 300m,
-            "SOLUSDT" => 100m,
-            "XRPUSDT" => 0.5m,
-            "ADAUSDT" => 0.5m,
-            "AVAXUSDT" => 35m,
-            "DOTUSDT" => 7m,
-            "MATICUSDT" => 0.8m,
-            "LINKUSDT" => 15m,
-            _ => 10m
-        };
-
-        return new ExchangePrice
-        {
-            Exchange = ExchangeName,
-            Symbol = symbol,
-            Price = price,
-            Timestamp = DateTime.UtcNow
-        };
+        // FULL ISOLATION: Return REAL price 
+        return _realState.GetPriceAsync(symbol);
     }
 
     public override Task<OrderInfo> GetOrderStatusAsync(string orderId)
@@ -165,14 +146,10 @@ public class BinanceSandboxState : BinanceBaseState
         });
     }
     
-    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
-        Logger.LogInformation("🎮 SANDBOX: Providing simulated order book for {Symbol}", symbol);
-        
-        var priceInfo = await GetPriceAsync(symbol);
-        var midPrice = priceInfo?.Price ?? 50000m; // Fallback if price fetch fails
-
-        return GetSimulatedOrderBook(midPrice, limit);
+        Logger.LogInformation("🎮 SANDBOX: Providing REAL order book for {Symbol}", symbol);
+        return _realState.GetOrderBookAsync(symbol, limit);
     }
 
     public override Task<bool> CancelOrderAsync(string orderId)

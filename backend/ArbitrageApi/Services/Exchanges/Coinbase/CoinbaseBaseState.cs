@@ -16,19 +16,12 @@ public abstract class CoinbaseBaseState : IExchangeState
     protected readonly string BaseUrl;
     protected readonly string ExchangeName = "Coinbase";
 
-    protected Dictionary<string, string> SymbolMapping = new()
-    {
-        { "BTCUSDT", "BTC-USD" },
-        { "ETHUSDT", "ETH-USD" },
-        { "BNBUSDT", "BNB-USD" },
-        { "SOLUSDT", "SOL-USD" },
-        { "XRPUSDT", "XRP-USD" },
-        { "ADAUSDT", "ADA-USD" },
-        { "AVAXUSDT", "AVAX-USD" },
-        { "DOTUSDT", "DOT-USD" },
-        { "MATICUSDT", "MATIC-USD" },
-        { "LINKUSDT", "LINK-USD" }
-    };
+    protected Dictionary<string, string> SymbolMapping = new();
+
+    private (decimal Maker, decimal Taker)? _cachedFees;
+    private DateTime _lastFeeUpdate = DateTime.MinValue;
+    private readonly TimeSpan _feeTtl = TimeSpan.FromMinutes(5);
+    protected List<Balance> CachedBalances = new();
 
     protected CoinbaseBaseState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, string baseUrl)
     {
@@ -37,6 +30,12 @@ public abstract class CoinbaseBaseState : IExchangeState
         ApiKey = apiKey;
         ApiSecret = apiSecret;
         BaseUrl = baseUrl;
+
+        // Initialize mapping from Centralized Source
+        foreach (var pair in TradingPair.CommonPairs)
+        {
+            SymbolMapping[pair.Symbol] = pair.GetCoinbaseSymbol();
+        }
     }
 
     public abstract Task<ExchangePrice?> GetPriceAsync(string symbol);
@@ -54,6 +53,29 @@ public abstract class CoinbaseBaseState : IExchangeState
     }
 
     public abstract Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
+
+    public virtual async Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync()
+    {
+        if (_cachedFees != null && (DateTime.UtcNow - _lastFeeUpdate) < _feeTtl)
+        {
+            Logger.LogDebug("💰 [Coinbase] Using cached fees: Maker={Maker}, Taker={Taker}", _cachedFees.Value.Maker, _cachedFees.Value.Taker);
+            return _cachedFees;
+        }
+
+        Logger.LogInformation("🔄 [Coinbase] Fetching fresh fees from API...");
+        var fees = await GetSpotFeesAsync();
+        if (fees != null)
+        {
+            _cachedFees = fees;
+            _lastFeeUpdate = DateTime.UtcNow;
+            Logger.LogInformation("✅ [Coinbase] Fees retrieved: Maker={Maker}, Taker={Taker}", fees.Value.Maker, fees.Value.Taker);
+        }
+        else
+        {
+            Logger.LogWarning("⚠️ [Coinbase] Failed to retrieve fees, using default: 0.001 (0.1%)");
+        }
+        return _cachedFees ?? (0.001m, 0.001m); // Lowered default for visibility
+    }
     public abstract Task<List<Balance>> GetBalancesAsync();
 
     public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
@@ -69,16 +91,16 @@ public abstract class CoinbaseBaseState : IExchangeState
 
             Logger.LogDebug("Order book fetched for {Symbol} from Coinbase", apiSymbol);
 
-            if (response == null) return null;
-
+            if (response?.PriceBook == null) return null;
+            
             var bids = response.PriceBook.Bids.Take(limit)
-      .Select(b => (decimal.Parse(b.Price, System.Globalization.CultureInfo.InvariantCulture),
-                    decimal.Parse(b.Size, System.Globalization.CultureInfo.InvariantCulture)))
-      .ToList();
+                .Select(b => (decimal.Parse(b.Price ?? "0", System.Globalization.CultureInfo.InvariantCulture),
+                              decimal.Parse(b.Size ?? "0", System.Globalization.CultureInfo.InvariantCulture)))
+                .ToList();
 
             var asks = response.PriceBook.Asks.Take(limit)
-                .Select(a => (decimal.Parse(a.Price, System.Globalization.CultureInfo.InvariantCulture),
-                              decimal.Parse(a.Size, System.Globalization.CultureInfo.InvariantCulture)))
+                .Select(a => (decimal.Parse(a.Price ?? "0", System.Globalization.CultureInfo.InvariantCulture),
+                              decimal.Parse(a.Size ?? "0", System.Globalization.CultureInfo.InvariantCulture)))
                 .ToList();
 
             Logger.LogDebug("Asks processed for {Symbol} from Coinbase", apiSymbol);

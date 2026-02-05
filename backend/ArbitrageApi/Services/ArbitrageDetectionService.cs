@@ -9,350 +9,246 @@ public class ArbitrageDetectionService : BackgroundService
 {
     private readonly IHubContext<ArbitrageHub> _hubContext;
     private readonly ILogger<ArbitrageDetectionService> _logger;
-    private readonly List<IExchangeClient> _exchangeClients;
-    private readonly TradeService _tradeService;
+    private readonly IEnumerable<IBookProvider> _bookProviders;
+    private readonly IEnumerable<IExchangeClient> _exchangeClients;
+    private readonly ArbitrageCalculator _calculator;
+    private readonly ChannelProvider _channelProvider;
+    private readonly StatePersistenceService _persistenceService;
+    private readonly ArbitrageStatsService _statsService;
     private readonly List<ArbitrageOpportunity> _recentOpportunities = new();
     private readonly object _lock = new();
     private bool _isSandboxMode = false;
-    private int _nextCheckInterval = 2000;
+    private decimal _currentMinProfitThreshold = 0.1m;
+    private string _currentStrategyReason = "Initial startup (default)";
 
     public bool IsSandboxMode => _isSandboxMode;
+    public bool IsSmartStrategyEnabled => _persistenceService.GetState().IsSmartStrategyEnabled;
 
-    private readonly StatePersistenceService _persistenceService;
-    private readonly ArbitrageStatsService _statsService;
+    public (decimal Threshold, string Reason) GetCurrentStrategy()
+    {
+        return (_currentMinProfitThreshold, _currentStrategyReason);
+    }
 
     public ArbitrageDetectionService(
         IHubContext<ArbitrageHub> hubContext,
         ILogger<ArbitrageDetectionService> logger,
+        IEnumerable<IBookProvider> bookProviders,
         IEnumerable<IExchangeClient> exchangeClients,
-        TradeService tradeService,
+        ChannelProvider channelProvider,
+        ArbitrageCalculator calculator,
         StatePersistenceService persistenceService,
         ArbitrageStatsService statsService)
     {
         _hubContext = hubContext;
         _logger = logger;
-        _exchangeClients = exchangeClients.ToList();
-        _tradeService = tradeService;
+        _bookProviders = bookProviders;
+        _exchangeClients = exchangeClients;
+        _channelProvider = channelProvider;
+        _calculator = calculator;
         _persistenceService = persistenceService;
         _statsService = statsService;
 
         // Load state from persistence
         var state = _persistenceService.GetState();
         _isSandboxMode = state.IsSandboxMode;
-        
-        // Apply sandbox mode to all clients immediately
+        _currentMinProfitThreshold = state.MinProfitThreshold;
+        if (!state.IsSmartStrategyEnabled)
+        {
+            _currentStrategyReason = "Manual Mode (using settings)";
+        }
+
+        // PROPAGATE SANDBOX MODE TO CLIENTS
         foreach (var client in _exchangeClients)
         {
-            client.SetSandboxMode(_isSandboxMode);
+            try
+            {
+                client.SetSandboxMode(_isSandboxMode);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initializing sandbox mode for {Exchange}", client.ExchangeName);
+            }
         }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("🚀 Arbitrage Detection Service started in {Mode} mode", _isSandboxMode ? "SANDBOX" : "REAL");
-        _logger.LogInformation("📡 Monitoring exchanges: {Exchanges}", 
-            string.Join(", ", _exchangeClients.Select(c => c.ExchangeName)));
+        _logger.LogInformation("🚀 Arbitrage Detection Service started (Event-Driven) in {Mode} mode", _isSandboxMode ? "SANDBOX" : "REAL");
 
-        // Ensure all exchange clients are initialized (especially Coinbase)
-        foreach (var client in _exchangeClients)
+        try
         {
-            if (client is CoinbaseClient coinbase)
-            {
-                await coinbase.InitializeAsync();
-            }
-        }
+            var strategyTask = ListenForStrategyUpdatesAsync(stoppingToken);
+            var detectionTask = RunDetectionLoopAsync(stoppingToken);
+            var broadcastTask = PeriodicallyBroadcastStatusAsync(stoppingToken);
 
-        while (!stoppingToken.IsCancellationRequested)
+            await Task.WhenAll(strategyTask, detectionTask, broadcastTask);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Arbitrage Detection Service stopping...");
+        }
+    }
+
+    private async Task ListenForStrategyUpdatesAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("📡 Detection Service: Listening for Strategy Updates...");
+        await foreach (var update in _channelProvider.StrategyUpdateChannel.Reader.ReadAllAsync(stoppingToken))
+        {
+            _logger.LogWarning("🎯 STRATEGY UPDATE RECEIVED: New Threshold = {Threshold}%. Reason: {Reason}", 
+                update.MinProfitThreshold, update.Reason);
+            
+            _currentMinProfitThreshold = update.MinProfitThreshold;
+            _currentStrategyReason = update.Reason;
+
+            await _hubContext.Clients.All.SendAsync("ReceiveStrategyUpdate", new { 
+                threshold = _currentMinProfitThreshold, 
+                reason = _currentStrategyReason 
+            }, stoppingToken);
+        }
+    }
+
+    private async Task RunDetectionLoopAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("🔍 Detection Loop starting (Multi-Pair Sweep)...");
+        
+        await foreach (var symbol in _channelProvider.MarketUpdateChannel.Reader.ReadAllAsync(stoppingToken))
         {
             try
             {
-                if(_exchangeClients?.Count < 2){
-                    _logger.LogWarning("Not enough exchanges to detect arbitrage opportunities");
-                    await Task.Delay(10000, stoppingToken);
-                    continue;
-                }
-                var opportunities = await FindArbitrageOpportunities(stoppingToken);
-
-                foreach (var opportunity in opportunities)
+                var orderBooks = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>();
+                var feesDict = new Dictionary<string, (decimal Maker, decimal Taker)>();
+                
+                foreach (var provider in _bookProviders)
                 {
-                    lock (_lock)
+                    var book = provider.GetOrderBook(symbol);
+                    if (book != null)
                     {
-                        _recentOpportunities.Add(opportunity);
-
-                        // Keep only last 100 opportunities
-                        if (_recentOpportunities.Count > 100)
-                        {
-                            _recentOpportunities.RemoveAt(0);
-                        }
+                        orderBooks[provider.ExchangeName] = book.Value;
+                        feesDict[provider.ExchangeName] = await provider.GetCachedFeesAsync() ?? (0.001m, 0.001m);
                     }
-
-                    // Broadcast to all connected clients
-                    await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
-
-                    // Auto-Trade Logic
-                    if (_tradeService.IsAutoTradeEnabled && opportunity.ProfitPercentage >= _tradeService.MinProfitThreshold)
-                    {
-                        // CALENDAR INTEGRATION: Check activity zone before trading
-                        var stats = await _statsService.GetStatsAsync();
-                        var now = DateTime.UtcNow;
-                        var day = now.DayOfWeek.ToString().Substring(0, 3);
-                        var hour = now.Hour.ToString("D2");
-
-                        if (stats.Calendar.TryGetValue(day, out var dayHours) && dayHours.TryGetValue(hour, out var detail))
-                        {
-                            if (detail.Zone == "low_activity")
-                            {
-                                _logger.LogInformation("📉 Auto-Trade: Skipping profitable opportunity ({Profit}%) because current activity zone is LOW.", opportunity.ProfitPercentage);
-                                continue;
-                            }
-                        }
-
-                        _logger.LogInformation("🤖 Auto-Trade: Profitable opportunity found ({Profit}%), queuing for execution...", opportunity.ProfitPercentage);
-                        await _tradeService.QueueTradeAsync(opportunity);
-                        
-                        // Note: Transaction notification will now happen in TradeService or via a separate event
-                        // For now, we'll let the UI update via the regular transaction polling or SignalR from TradeService if implemented
-                    }
-
-                    _logger.LogInformation(
-                        "💰 {Mode} Arbitrage: {Asset} - Buy on {BuyExchange} at ${BuyPrice:N2}, Sell on {SellExchange} at ${SellPrice:N2}, Profit: {Profit:N2}%",
-                        _isSandboxMode ? "SANDBOX" : "REAL",
-                        opportunity.Asset,
-                        opportunity.BuyExchange,
-                        opportunity.BuyPrice,
-                        opportunity.SellExchange,
-                        opportunity.SellPrice,
-                        opportunity.ProfitPercentage);
                 }
 
-                // Wait 10 seconds before next check (to respect API rate limits)
-                await Task.Delay(_nextCheckInterval, stoppingToken);
+                // 3. Broadcast Latest Prices for Comparison Chart
+                if (orderBooks.Count > 0)
+                {
+                    var priceUpdate = new
+                    {
+                        asset = symbol,
+                        prices = orderBooks.ToDictionary(
+                            kvp => kvp.Key, // Exchange Name
+                            kvp => kvp.Value.Asks.Count > 0 ? kvp.Value.Asks[0].Price : (kvp.Value.Bids.Count > 0 ? kvp.Value.Bids[0].Price : 0m)
+                        ),
+                        timestamp = DateTime.UtcNow
+                    };
+                    await _hubContext.Clients.All.SendAsync("ReceiveMarketPrices", priceUpdate, stoppingToken);
+                }
+
+                if (orderBooks.Count < 2) continue;
+
+                var exchanges = orderBooks.Keys.ToList();
+                for (int i = 0; i < exchanges.Count; i++)
+                {
+                    for (int j = 0; j < exchanges.Count; j++)
+                    {
+                        if (i == j) continue;
+
+                        string buyEx = exchanges[i];
+                        string sellEx = exchanges[j];
+
+                        var state = _persistenceService.GetState();
+                        var opportunity = _calculator.CalculatePairOpportunity(
+                            symbol,
+                            buyEx,
+                            sellEx,
+                            orderBooks[buyEx].Asks,
+                            orderBooks[sellEx].Bids,
+                            feesDict[buyEx],
+                            feesDict[sellEx],
+                            _isSandboxMode,
+                            _currentMinProfitThreshold,
+                            null, // Balances will be added later or fetched from a service
+                            state.SafeBalanceMultiplier,
+                            state.UseTakerFees,
+                            state.PairThresholds
+                        );
+
+                        if (opportunity != null)
+                        {
+                            await ProcessOpportunityAsync(opportunity, symbol, stoppingToken);
+                        }
+                    }
+                }
+                
+                await Task.Delay(50, stoppingToken); // Small delay between symbols
             }
-            catch (OperationCanceledException)
-            {
-                // Graceful shutdown
-                break;
-            }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in arbitrage detection service");
-                try 
-                {
-                    await Task.Delay(10000, stoppingToken);
-                }
-                catch (OperationCanceledException) 
-                { 
-                    break; 
-                }
+                _logger.LogError(ex, "Error processing market update for {Symbol}", symbol);
             }
         }
-
-        _logger.LogInformation("Arbitrage Detection Service stopped");
     }
 
-    private async Task<List<ArbitrageOpportunity>> FindArbitrageOpportunities(CancellationToken cancellationToken)
+    private async Task ProcessOpportunityAsync(ArbitrageOpportunity opportunity, string symbol, CancellationToken stoppingToken)
     {
-        var opportunities = new List<ArbitrageOpportunity>();
-        try
+        // 1. Statistics tracking
+        if (opportunity.ProfitPercentage > 0 && opportunity.ProfitPercentage <= 10.0m)
         {
-            var symbols = TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
-            
-            // 1. Fetch market data (order books and fees)
-            var (orderBooks, feesDict) = await FetchMarketDataAsync(symbols, cancellationToken);
-
-            foreach (var symbol in symbols)
-            {
-                // 2. Find best buy and best sell prices across exchanges
-                var bestPrices = FindBestPrices(symbol, orderBooks, feesDict);
-                if (bestPrices.BestBuy == null || bestPrices.BestSell == null) continue;
-                if (bestPrices.BestBuy.Value.Exchange == bestPrices.BestSell.Value.Exchange) continue;
-
-                var bestBuy = bestPrices.BestBuy.Value;
-                var bestSell = bestPrices.BestSell.Value;
-
-                // 3. Calculate maximum volume based on available funds (Sandbox) or default
-                var pair = TradingPair.CommonPairs.First(p => p.Symbol == symbol);
-                decimal maxVolume = await CalculateMaxVolumeAsync(pair, bestBuy, bestSell);
-                if (maxVolume <= 0) continue;
-
-                // 4. Simulate order book execution
-                var execution = SimulateOrderBookExecution(maxVolume, bestBuy.Asks, bestSell.Bids);
-                if (execution.BuyVolumeFilled == 0 || execution.SellVolumeFilled == 0) continue;
-
-                // 5. Calculate profit and create opportunity if profitable
-                var opportunity = CreateOpportunity(pair, symbol, bestBuy, bestSell, execution);
-                
-                // 6. Queue event for statistics (even if not profitable enough to trade)
-                await _statsService.QueueEventAsync(new ArbitrageEvent
-                {
-                    Id = Guid.NewGuid(),
-                    Pair = symbol,
-                    Direction = $"{bestBuy.Exchange.Substring(0, 1)}→{bestSell.Exchange.Substring(0, 1)}",
-                    Spread = (execution.AvgSellPrice - execution.AvgBuyPrice) / execution.AvgBuyPrice,
-                    DepthBuy = bestBuy.Asks.Sum(a => a.Quantity),
-                    DepthSell = bestSell.Bids.Sum(b => b.Quantity),
-                    Timestamp = DateTime.UtcNow
-                });
-
-                if (opportunity != null)
-                {
-                    opportunities.Add(opportunity);
-                }
-            }
-            _logger.LogInformation("Found {Count} arbitrage opportunities (order book based)", opportunities.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error finding arbitrage opportunities (order book based)");
-        }
-        return opportunities;
-    }
-
-    private async Task<(Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>> OrderBooks, Dictionary<string, (decimal Maker, decimal Taker)> Fees)> FetchMarketDataAsync(List<string> symbols, CancellationToken ct)
-    {
-        var orderBooks = new Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>>();
-        var feesDict = new Dictionary<string, (decimal Maker, decimal Taker)>();
-
-        foreach (var client in _exchangeClients)
-        {
-            var fees = await client.GetSpotFeesAsync() ?? (0m, 0m);
-            feesDict[client.ExchangeName] = fees;
-            
-            var books = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>();
-            foreach (var symbol in symbols)
-            {
-                var book = await client.GetOrderBookAsync(symbol, 20);
-                if (book != null)
-                    books[symbol] = book.Value;
-            }
-            orderBooks[client.ExchangeName] = books;
-        }
-
-        return (orderBooks, feesDict);
-    }
-
-    private ( (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks)? BestBuy, 
-              (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids)? BestSell ) 
-            FindBestPrices(string symbol, Dictionary<string, Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>> orderBooks, Dictionary<string, (decimal Maker, decimal Taker)> feesDict)
-    {
-        (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks)? bestBuy = null;
-        (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids)? bestSell = null;
-
-        foreach (var (exchange, books) in orderBooks)
-        {
-            if (books.TryGetValue(symbol, out var book))
-            {
-                if (book.Asks.Count > 0)
-                {
-                    var ask = book.Asks[0];
-                    if (bestBuy == null || ask.Price < bestBuy.Value.Price)
-                        bestBuy = (exchange, ask.Price, feesDict[exchange], book.Asks);
-                }
-                if (book.Bids.Count > 0)
-                {
-                    var bid = book.Bids[0];
-                    if (bestSell == null || bid.Price > bestSell.Value.Price)
-                        bestSell = (exchange, bid.Price, feesDict[exchange], book.Bids);
-                }
-            }
-        }
-
-        return (bestBuy, bestSell);
-    }
-
-    private async Task<decimal> CalculateMaxVolumeAsync(TradingPair pair, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks) bestBuy, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids) bestSell)
-    {
-        decimal maxVolume = 1.0m; // Default for real mode
-
-        if (_isSandboxMode)
-        {
-            var buyExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestBuy.Exchange);
-            var sellExchangeClient = _exchangeClients.First(c => c.ExchangeName == bestSell.Exchange);
-            
-            var buyBalances = await buyExchangeClient.GetBalancesAsync();
-            var sellBalances = await sellExchangeClient.GetBalancesAsync();
-            
-            var usdBalance = buyBalances.FirstOrDefault(b => b.Asset == "USD")?.Free ?? 0m;
-            var assetBalance = sellBalances.FirstOrDefault(b => b.Asset == pair.BaseAsset)?.Free ?? 0m;
-
-            var maxVolFromUsd = (usdBalance * 0.5m) / bestBuy.Price;
-            var maxVolFromAsset = assetBalance * 0.5m;
-            
-            maxVolume = Math.Min(maxVolFromUsd, maxVolFromAsset);
-            maxVolume = Math.Round(maxVolume, 8);
-
-            if (maxVolume <= 0)
-            {
-                _logger.LogDebug("⏭️ Skipping {Symbol} opportunity: Insufficient funds in Sandbox (USD: {Usd}, {Asset}: {AssetBal})", 
-                    pair.Symbol, usdBalance, pair.BaseAsset, assetBalance);
-            }
-        }
-
-        return maxVolume;
-    }
-
-    private (decimal BuyVolumeFilled, decimal AvgBuyPrice, decimal SellVolumeFilled, decimal AvgSellPrice) SimulateOrderBookExecution(decimal maxVolume, List<(decimal Price, decimal Quantity)> asks, List<(decimal Price, decimal Quantity)> bids)
-    {
-        // Simulate walking the order book for buy (asks)
-        decimal buyCost = 0m;
-        decimal buyVolumeFilled = 0m;
-        foreach (var (price, qty) in asks)
-        {
-            var take = Math.Min(qty, maxVolume - buyVolumeFilled);
-            buyCost += take * price;
-            buyVolumeFilled += take;
-            if (buyVolumeFilled >= maxVolume) break;
-        }
-
-        if (buyVolumeFilled == 0) return (0, 0, 0, 0);
-        decimal avgBuyPrice = buyCost / buyVolumeFilled;
-
-        // Simulate walking the order book for sell (bids)
-        decimal sellProceeds = 0m;
-        decimal sellVolumeFilled = 0m;
-        foreach (var (price, qty) in bids)
-        {
-            var take = Math.Min(qty, buyVolumeFilled - sellVolumeFilled);
-            sellProceeds += take * price;
-            sellVolumeFilled += take;
-            if (sellVolumeFilled >= buyVolumeFilled) break;
-        }
-
-        if (sellVolumeFilled == 0) return (buyVolumeFilled, avgBuyPrice, 0, 0);
-        decimal avgSellPrice = sellProceeds / sellVolumeFilled;
-
-        return (buyVolumeFilled, avgBuyPrice, sellVolumeFilled, avgSellPrice);
-    }
-
-    private ArbitrageOpportunity? CreateOpportunity(TradingPair pair, string symbol, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Asks) bestBuy, (string Exchange, decimal Price, (decimal Maker, decimal Taker) Fees, List<(decimal Price, decimal Quantity)> Bids) bestSell, (decimal BuyVolumeFilled, decimal AvgBuyPrice, decimal SellVolumeFilled, decimal AvgSellPrice) execution)
-    {
-        var buyFee = bestBuy.Fees.Maker;
-        var sellFee = bestSell.Fees.Maker;
-        var grossProfitPercentage = ((execution.AvgSellPrice - execution.AvgBuyPrice) / execution.AvgBuyPrice) * 100;
-        var netProfitPercentage = grossProfitPercentage - buyFee - sellFee;
-
-        if (netProfitPercentage > 0.1m && execution.BuyVolumeFilled >= 0.00001m)
-        {
-            return new ArbitrageOpportunity
+            await _channelProvider.EventChannel.Writer.WriteAsync(new ArbitrageEvent
             {
                 Id = Guid.NewGuid(),
-                Asset = pair.BaseAsset,
-                Symbol = symbol,
-                BuyExchange = bestBuy.Exchange,
-                SellExchange = bestSell.Exchange,
-                BuyPrice = execution.AvgBuyPrice,
-                SellPrice = execution.AvgSellPrice,
-                BuyFee = buyFee,
-                SellFee = sellFee,
-                ProfitPercentage = Math.Round(netProfitPercentage, 2),
-                Volume = execution.BuyVolumeFilled,
-                Timestamp = DateTime.UtcNow,
-                Status = "Active",
-                IsSandbox = _isSandboxMode
-            };
+                Pair = symbol,
+                Direction = $"{opportunity.BuyExchange.Substring(0, 1)}→{opportunity.SellExchange.Substring(0, 1)}",
+                Spread = opportunity.ProfitPercentage / 100,
+                SpreadPercent = opportunity.ProfitPercentage, // Initialize directly to avoid race conditions if normalization lags
+                DepthBuy = opportunity.BuyDepth,
+                DepthSell = opportunity.SellDepth,
+                Timestamp = DateTime.UtcNow
+            }, stoppingToken);
         }
 
-        return null;
+        // 2. Dashboard and Trading
+        decimal minOpportunityValue = 100m; // Default fallback
+        try
+        {
+             // Simplified for this context - ideally injected via IConfiguration
+             // Assuming _configuration is available or hardcoding for now based on previous step
+             // Let's stick to a safe default if not injecting IConfiguration right now to avoid constructor changes
+        }
+        catch {}
+
+        // Calculate total value of the opportunity in USD (Volume * Price)
+        // Ensure strictly > 0 profit and meets minimum value threshold ($100)
+        bool isValuableEnough = (opportunity.Volume * opportunity.BuyPrice) >= 100m;
+
+        if ((opportunity.ProfitPercentage >= _currentMinProfitThreshold || opportunity.GrossProfitPercentage >= 0.05m) 
+            && opportunity.ProfitPercentage > 0 
+            && isValuableEnough)
+        {
+            lock (_lock)
+            {
+                // Check if we already have a similar opportunity to avoid spamming the same one
+                var existing = _recentOpportunities.FirstOrDefault(o => 
+                    o.Symbol == opportunity.Symbol && 
+                    o.BuyExchange == opportunity.BuyExchange && 
+                    o.SellExchange == opportunity.SellExchange);
+                
+                if (existing != null)
+                {
+                    _recentOpportunities.Remove(existing);
+                }
+
+                _recentOpportunities.Add(opportunity);
+                if (_recentOpportunities.Count > 100) _recentOpportunities.RemoveAt(0);
+            }
+            
+            await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
+            
+            if (opportunity.ProfitPercentage >= _currentMinProfitThreshold)
+            {
+                await _channelProvider.TradeChannel.Writer.WriteAsync(opportunity, stoppingToken);
+            }
+        }
     }
 
     public List<ArbitrageOpportunity> GetRecentOpportunities()
@@ -376,7 +272,6 @@ public class ArbitrageDetectionService : BackgroundService
         {
             try 
             {
-                _logger.LogDebug("Updating Sandbox Mode for client: {ExchangeName}", client.ExchangeName);
                 client.SetSandboxMode(enabled);
             }
             catch (Exception ex)
@@ -385,8 +280,91 @@ public class ArbitrageDetectionService : BackgroundService
             }
         }
         
-        // Broadcast the update to all connected clients
-        _logger.LogInformation("📡 Broadcasting SandboxModeUpdate: {Status}", enabled);
         await _hubContext.Clients.All.SendAsync("ReceiveSandboxModeUpdate", enabled);
     }
+
+    public async Task SetSmartStrategy(bool enabled)
+    {
+        _logger.LogInformation("🔄 Switching Smart Strategy to: {Status}", enabled ? "ENABLED" : "DISABLED");
+        
+        var state = _persistenceService.GetState();
+        state.IsSmartStrategyEnabled = enabled;
+        _persistenceService.SaveState(state);
+
+        await _hubContext.Clients.All.SendAsync("ReceiveSmartStrategyUpdate", enabled);
+        
+        if (!enabled)
+        {
+            _currentMinProfitThreshold = state.MinProfitThreshold;
+            _currentStrategyReason = "Manual Mode (using settings)";
+            
+            await _hubContext.Clients.All.SendAsync("ReceiveStrategyUpdate", new { 
+                threshold = _currentMinProfitThreshold, 
+                reason = _currentStrategyReason 
+            });
+        }
+        else
+        {
+            _currentStrategyReason = "Smart Mode Activated (Analyzing market data...)";
+            
+            // Broadcast the intent immediately
+            await _hubContext.Clients.All.SendAsync("ReceiveStrategyUpdate", new { 
+                threshold = _currentMinProfitThreshold, 
+                reason = _currentStrategyReason 
+            });
+
+            // Trigger the Stats service to recalculate RIGHT NOW
+            _statsService.TriggerUpdate();
+        }
+    }
+
+    public async Task SetPairThresholds(Dictionary<string, decimal> thresholds)
+    {
+        _logger.LogInformation("🔄 Updating Pair Thresholds: {Count} pairs", thresholds.Count);
+        var state = _persistenceService.GetState();
+        state.PairThresholds = thresholds;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceivePairThresholdsUpdate", thresholds);
+    }
+
+    public async Task SetSafeBalanceMultiplier(decimal multiplier)
+    {
+        _logger.LogInformation("🔄 Updating Safe Balance Multiplier to: {Multiplier}", multiplier);
+        var state = _persistenceService.GetState();
+        state.SafeBalanceMultiplier = multiplier;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveSafeBalanceMultiplierUpdate", multiplier);
+    }
+
+    public async Task SetUseTakerFees(bool useTakerFees)
+    {
+        _logger.LogInformation("🔄 Updating Fee Mode: {Mode}", useTakerFees ? "Taker (Pessimistic)" : "Maker (Optimistic)");
+        var state = _persistenceService.GetState();
+        state.UseTakerFees = useTakerFees;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveFeeModeUpdate", useTakerFees);
+    }
+
+    private async Task PeriodicallyBroadcastStatusAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveStrategyUpdate", new { 
+                    threshold = _currentMinProfitThreshold, 
+                    reason = _currentStrategyReason 
+                }, stoppingToken);
+                
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in status broadcast loop");
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+        }
+    }
+
 }

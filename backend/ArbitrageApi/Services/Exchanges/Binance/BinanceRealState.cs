@@ -54,10 +54,14 @@ public class BinanceRealState : BinanceBaseState
             }
 
             var account = await response.Content.ReadFromJsonAsync<BinanceAccountResponse>();
-            if (account?.Balances == null) return new List<Balance>();
+            if (account?.Balances == null) 
+            {
+                Logger.LogWarning("Binance balances response or balances list is null, using cache.");
+                return CachedBalances;
+            }
 
             Logger.LogInformation("Balances fetched from Binance");
-            return account.Balances
+            var freshBalances = account.Balances
                 .Where(b => decimal.Parse(b.Free, System.Globalization.CultureInfo.InvariantCulture) > 0 || 
                             decimal.Parse(b.Locked, System.Globalization.CultureInfo.InvariantCulture) > 0)
                 .Select(b => new Balance
@@ -66,10 +70,18 @@ public class BinanceRealState : BinanceBaseState
                     Free = decimal.Parse(b.Free, System.Globalization.CultureInfo.InvariantCulture),
                     Locked = decimal.Parse(b.Locked, System.Globalization.CultureInfo.InvariantCulture)
                 }).ToList();
+
+            if (freshBalances.Any())
+            {
+                CachedBalances = freshBalances;
+            }
+            
+            return freshBalances;
         }
-        catch
+        catch (Exception ex)
         {
-            return new List<Balance>();
+            Logger.LogError(ex, "Error fetching balances from Binance, returning cache.");
+            return CachedBalances;
         }
     }
 

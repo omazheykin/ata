@@ -20,23 +20,29 @@ public class TradeService : BackgroundService
     private decimal _minProfitThreshold = 0.5m; // 0.5% default
     private ExecutionStrategy _strategy = ExecutionStrategy.Sequential;
     private decimal _maxSlippagePercentage = 0.2m; // 0.2% default
-    private readonly Channel<ArbitrageOpportunity> _tradeChannel;
-
+    private readonly ChannelProvider _channelProvider;
     private readonly StatePersistenceService _persistenceService;
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> _hubContext;
+    private readonly ArbitrageStatsService _statsService;
+    private readonly RebalancingService _rebalancingService;
 
     public TradeService(
         ILogger<TradeService> logger, 
         IEnumerable<IExchangeClient> exchangeClients, 
         IConfiguration configuration, 
         StatePersistenceService persistenceService,
-        Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> hubContext)
+        Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> hubContext,
+        ChannelProvider channelProvider,
+        ArbitrageStatsService statsService,
+        RebalancingService rebalancingService)
     {
         _logger = logger;
         _exchangeClients = exchangeClients.ToList();
         _persistenceService = persistenceService;
         _hubContext = hubContext;
-        _tradeChannel = Channel.CreateUnbounded<ArbitrageOpportunity>();
+        _channelProvider = channelProvider;
+        _statsService = statsService;
+        _rebalancingService = rebalancingService;
         
         // Load state from persistence
         var state = _persistenceService.GetState();
@@ -52,25 +58,84 @@ public class TradeService : BackgroundService
         }
     }
 
-    public async ValueTask QueueTradeAsync(ArbitrageOpportunity opportunity)
-    {
-        await _tradeChannel.Writer.WriteAsync(opportunity);
-    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("🚀 Trade Service background worker started");
 
-        await foreach (var opportunity in _tradeChannel.Reader.ReadAllAsync(stoppingToken))
+        try
         {
-            try
+            await foreach (var opportunity in _channelProvider.TradeChannel.Reader.ReadAllAsync(stoppingToken))
             {
-                await ExecuteTradeAsync(opportunity);
+                _logger.LogInformation("💰 Trade Service: Signal received for {Symbol} ({Profit}%). Checking filters...", opportunity.Symbol, opportunity.ProfitPercentage);
+                try
+                {
+                    if (!_isAutoTradeEnabled)
+                    {
+                        _logger.LogDebug("Auto-Trade is disabled, skipping opportunity for {Symbol}", opportunity.Symbol);
+                        continue;
+                    }
+
+                    // CALENDAR INTEGRATION: Check activity zone before trading
+                    var stats = await _statsService.GetStatsAsync();
+                    var now = DateTime.UtcNow;
+                    var day = now.DayOfWeek.ToString().Substring(0, 3);
+                    var hour = now.Hour.ToString("D2");
+
+                    if (stats.Calendar.TryGetValue(day, out var dayHours) && dayHours.TryGetValue(hour, out var detail))
+                    {
+                        if (detail.Zone == "low_activity")
+                        {
+                            _logger.LogInformation("📉 Auto-Trade: Current activity zone is LOW, but proceeding for verification... (Symbol: {Symbol})", opportunity.Symbol);
+                            // continue;
+                        }
+                    }
+
+                    // REBALANCING LOGIC: Adjust threshold based on skew
+                    var asset = opportunity.Asset;
+                    var skew = _rebalancingService.GetSkew(asset); // -1.0 (heavy CB) to 1.0 (heavy Binance)
+                    
+                    // If buying on Coinbase (CB) and selling on Binance (B), we are MOVING ASSET TO BINANCE (increasing skew)
+                    bool movingToBinance = opportunity.BuyExchange == "Coinbase";
+                    
+                    decimal thresholdAdjustment = 0m;
+                    if (movingToBinance)
+                    {
+                        // If we are already heavy on Binance (skew > 0), this trade makes it WORSE.
+                        if (skew > 0) thresholdAdjustment = skew * 0.5m; // Max +0.5% penalty
+                        // If we are heavy on Coinbase (skew < 0), this trade IMPROVES balance.
+                        else if (skew < 0) thresholdAdjustment = skew * 0.3m; // Max -0.3% incentive
+                    }
+                    else // movingToCoinbase
+                    {
+                        if (skew < 0) thresholdAdjustment = Math.Abs(skew) * 0.5m;
+                        else if (skew > 0) thresholdAdjustment = -skew * 0.3m;
+                    }
+
+                    var adjustedThreshold = Math.Max(0.05m, _minProfitThreshold + thresholdAdjustment);
+                    
+                    if (opportunity.ProfitPercentage < adjustedThreshold)
+                    {
+                         _logger.LogInformation("⚖️ Rebalancing: Skipping {Symbol} ({Profit}%). Adjusted threshold: {Threshold:N2}% (Base: {Base}%, Skew: {Skew:N2})", 
+                            opportunity.Symbol, opportunity.ProfitPercentage, adjustedThreshold, _minProfitThreshold, skew);
+                         continue;
+                    }
+
+                    await ExecuteTradeAsync(opportunity, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing trade from channel for {Symbol}", opportunity.Symbol);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing trade from channel for {Symbol}", opportunity.Symbol);
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Trade Service stopping...");
         }
     }
 
@@ -97,6 +162,14 @@ public class TradeService : BackgroundService
         var state = _persistenceService.GetState();
         state.MinProfitThreshold = threshold;
         _persistenceService.SaveState(state);
+
+        // Notify Detection Service via Channel
+        _channelProvider.StrategyUpdateChannel.Writer.TryWrite(new StrategyUpdate
+        {
+            MinProfitThreshold = threshold,
+            Reason = "Manual override (User Set)",
+            Timestamp = DateTime.UtcNow
+        });
     }
 
     public void SetExecutionStrategy(ExecutionStrategy strategy)
@@ -105,7 +178,7 @@ public class TradeService : BackgroundService
         _logger.LogInformation("Execution Strategy set to {Strategy}", strategy);
     }
 
-    public async Task<bool> ExecuteTradeAsync(ArbitrageOpportunity opportunity)
+    public async Task<bool> ExecuteTradeAsync(ArbitrageOpportunity opportunity, CancellationToken ct = default)
     {
         try
         {
@@ -141,11 +214,11 @@ public class TradeService : BackgroundService
 
             if (_strategy == ExecutionStrategy.Sequential)
             {
-                return await ExecuteSequentialAsync(opportunity, buyClient, sellClient);
+                return await ExecuteSequentialAsync(opportunity, buyClient, sellClient, ct);
             }
             else
             {
-                return await ExecuteConcurrentAsync(opportunity, buyClient, sellClient);
+                return await ExecuteConcurrentAsync(opportunity, buyClient, sellClient, ct);
             }
         }
         catch (Exception ex)
@@ -155,7 +228,7 @@ public class TradeService : BackgroundService
         }
     }
 
-    private async Task<bool> ExecuteSequentialAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient)
+    private async Task<bool> ExecuteSequentialAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient, CancellationToken ct)
     {
         // 1. Place Buy Order
         var buyResponse = await buyClient.PlaceMarketBuyOrderAsync(opportunity.Symbol, opportunity.Volume);
@@ -192,7 +265,7 @@ public class TradeService : BackgroundService
         return true;
     }
 
-    private async Task<bool> ExecuteConcurrentAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient)
+    private async Task<bool> ExecuteConcurrentAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient, CancellationToken ct)
     {
         // Place both orders simultaneously
         var buyTask = buyClient.PlaceMarketBuyOrderAsync(opportunity.Symbol, opportunity.Volume);
@@ -265,6 +338,9 @@ public class TradeService : BackgroundService
         
         // Broadcast to SignalR clients
         _hubContext.Clients.All.SendAsync("ReceiveTransaction", transaction).ConfigureAwait(false);
+        
+        // Emit to stats engine for persistence
+        _channelProvider.TransactionChannel.Writer.TryWrite(transaction);
         
         return transaction;
     }

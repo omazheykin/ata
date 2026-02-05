@@ -12,6 +12,11 @@ interface BalancesPanelProps {
   onToggleAutoTrade: (enabled: boolean) => void;
   isSandboxMode: boolean;
   onToggleSandbox: (enabled: boolean) => void;
+  executionStrategy: string;
+  onToggleStrategy: () => void;
+  useTakerFees: boolean;
+  onToggleFeeMode: (enabled: boolean) => void;
+  onShowFeeHelp?: () => void;
 }
 
 const BalancesPanel: React.FC<BalancesPanelProps> = ({
@@ -25,11 +30,16 @@ const BalancesPanel: React.FC<BalancesPanelProps> = ({
   onToggleAutoTrade,
   isSandboxMode,
   onToggleSandbox,
+  executionStrategy,
+  onToggleStrategy,
+  useTakerFees,
+  onToggleFeeMode,
+  onShowFeeHelp,
 }) => {
   const totalProfit = transactions.reduce((sum, tx) => sum + tx.profit, 0);
 
   return (
-    <div className="flex flex-col h-full bg-[#0f172a]/50 backdrop-blur-xl border-r border-white/10 w-80">
+    <div className="flex flex-col min-h-0 h-full bg-[#0f172a]/50 backdrop-blur-xl border-r border-white/10 w-80">
       <div className="p-4 border-b border-white/10">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -134,6 +144,65 @@ const BalancesPanel: React.FC<BalancesPanelProps> = ({
             >
               <span
                 className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isSandboxMode ? "translate-x-4" : "translate-x-1"}`}
+              />
+            </button>
+          </div>
+
+          {/* Strategy Toggle */}
+          <div className="glass p-2 rounded-xl border border-blue-500/20 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${executionStrategy === "Sequential" ? "bg-blue-500/20 text-blue-400" : "bg-purple-500/20 text-purple-400"}`}
+              >
+                <span className="text-xs">⚡</span>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-white">Strategy</p>
+                <p className="text-[8px] text-gray-500">{executionStrategy}</p>
+              </div>
+            </div>
+            <button
+              onClick={onToggleStrategy}
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${executionStrategy === "Sequential" ? "bg-blue-600" : "bg-purple-600"}`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${executionStrategy !== "Sequential" ? "translate-x-4" : "translate-x-1"}`}
+              />
+            </button>
+          </div>
+
+          {/* Fee Mode Toggle */}
+          <div className="glass p-2 rounded-xl border border-primary-500/20 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${useTakerFees ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"}`}
+              >
+                <span className="text-xs">{useTakerFees ? "🛡️" : "⚔️"}</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[10px] font-bold text-white">Fee Mode</p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShowFeeHelp?.();
+                    }}
+                    className="w-3.5 h-3.5 rounded-full bg-white/5 flex items-center justify-center text-[8px] text-gray-400 hover:bg-white/10 hover:text-white transition-all border border-white/5"
+                  >
+                    ?
+                  </button>
+                </div>
+                <p className="text-[8px] text-gray-500">
+                  {useTakerFees ? "Taker" : "Maker"}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onToggleFeeMode(!useTakerFees)}
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${useTakerFees ? "bg-green-600" : "bg-orange-600"}`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${!useTakerFees ? "translate-x-4" : "translate-x-1"}`}
               />
             </button>
           </div>

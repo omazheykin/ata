@@ -8,79 +8,37 @@ public class CoinbaseSandboxState : CoinbaseBaseState
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, decimal> _balances = new();
 
-    public CoinbaseSandboxState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret) 
+    private readonly IExchangeState _realState;
+
+    public CoinbaseSandboxState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, IExchangeState realState) 
         : base(httpClient, logger, apiKey, apiSecret, "https://api-public.sandbox.exchange.coinbase.com")
     {
+        _realState = realState;
+        
         // Initialize with default funds
         _balances["USD"] = 10000m;
-        _balances["BTC"] = 0.5m;
-        _balances["ETH"] = 5.0m;
-        _balances["BNB"] = 50.0m;
-        _balances["SOL"] = 100.0m;
-        _balances["XRP"] = 5000.0m;
-        _balances["ADA"] = 10000.0m;
-        _balances["AVAX"] = 100.0m;
-        _balances["DOT"] = 500.0m;
-        _balances["MATIC"] = 5000.0m;
-        _balances["LINK"] = 200.0m;
+        _balances["BTC"] = 10000m;
+        _balances["ETH"] = 10000m;
+        _balances["BNB"] = 10000m;
+        _balances["SOL"] = 10000m;
+        _balances["XRP"] = 10000m;
+        _balances["ADA"] = 10000m;
+        _balances["AVAX"] = 10000m;
+        _balances["DOT"] = 10000m;
+        _balances["MATIC"] = 10000m;
+        _balances["LINK"] = 10000m;
     }
 
     public override Task<ExchangePrice?> GetPriceAsync(string symbol)
     {
-        // FULL ISOLATION: Return simulated price immediately without network calls
-        return Task.FromResult(GetSimulatedPrice(symbol));
+        // Use REAL price for simulation accuracy
+        return _realState.GetPriceAsync(symbol);
     }
 
-    private ExchangePrice? GetSimulatedPrice(string symbol)
+    public override Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
     {
-        // Fallback to a reasonable simulated price if the sandbox API is down
-        decimal price = symbol switch
-        {
-            "BTCUSDT" => 50000m,
-            "ETHUSDT" => 2500m,
-            "BNBUSDT" => 300m,
-            "SOLUSDT" => 100m,
-            "XRPUSDT" => 0.5m,
-            "ADAUSDT" => 0.5m,
-            "AVAXUSDT" => 35m,
-            "DOTUSDT" => 7m,
-            "MATICUSDT" => 0.8m,
-            "LINKUSDT" => 15m,
-            _ => 10m
-        };
-
-        return new ExchangePrice
-        {
-            Exchange = ExchangeName,
-            Symbol = symbol,
-            Price = price,
-            Timestamp = DateTime.UtcNow
-        };
-    }
-
-    public override async Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
-    {
-        try
-        {
-            var requestPath = "/fees";
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-            var signature = Sign(timestamp, "GET", requestPath, "", true);
-
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}{requestPath}");
-            request.Headers.Add("CB-ACCESS-KEY", ApiKey);
-            request.Headers.Add("CB-ACCESS-SIGN", signature);
-            request.Headers.Add("CB-ACCESS-TIMESTAMP", timestamp);
-
-            var response = await HttpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return (0.005m, 0.005m);
-
-            var fees = await response.Content.ReadFromJsonAsync<CoinbaseExchangeFeeResponse>();
-            return (fees?.MakerFeeRate ?? 0.005m, fees?.TakerFeeRate ?? 0.005m);
-        }
-        catch
-        {
-            return (0.005m, 0.005m);
-        }
+        // Sandbox typically has standard low fees
+        return Task.FromResult<(decimal Maker, decimal Taker)?>((0.001m, 0.001m));
     }
 
     public override Task<List<Balance>> GetBalancesAsync()
@@ -106,8 +64,17 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         Logger.LogInformation("SANDBOX: Placing market buy order for {Symbol}, quantity {Quantity}", symbol, quantity);
         
         var orderId = $"SANDBOX_CB_BUY_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+        
+        // Use real price for execution math
         var priceInfo = await GetPriceAsync(symbol);
         var price = priceInfo?.Price ?? 0m;
+        
+        if (price <= 0) 
+        {
+             Logger.LogError("❌ SANDBOX: Could not fetch real price for {Symbol}. trade aborted.", symbol);
+             return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = "Could not fetch price" };
+        }
+
         var totalCost = quantity * price;
 
         if (!_balances.TryGetValue("USD", out var usdBalance) || usdBalance < totalCost)
@@ -148,8 +115,10 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         }
 
         _balances[asset] -= quantity;
+        
         var priceInfo = await GetPriceAsync(symbol);
         var price = priceInfo?.Price ?? 0m;
+        
         var totalProceeds = quantity * price;
         _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
 
@@ -239,14 +208,10 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         };
     }
 
-    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
-        Logger.LogInformation("🎮 SANDBOX: Providing simulated order book for {Symbol}", symbol);
-        
-        var priceInfo = await GetPriceAsync(symbol);
-        var midPrice = priceInfo?.Price ?? 50000m; // Fallback if price fetch fails
-
-        return GetSimulatedOrderBook(midPrice, limit);
+        // Delegate to REAL state for real order book data
+        return _realState.GetOrderBookAsync(symbol, limit);
     }
 
     public override async Task<bool> CancelOrderAsync(string orderId)

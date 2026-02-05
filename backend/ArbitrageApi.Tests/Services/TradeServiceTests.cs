@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
+using Microsoft.AspNetCore.SignalR;
+
 namespace ArbitrageApi.Tests.Services;
 
 public class TradeServiceTests
@@ -15,6 +17,11 @@ public class TradeServiceTests
     private readonly IConfiguration _configuration;
     private readonly Mock<IExchangeClient> _binanceClientMock;
     private readonly Mock<IExchangeClient> _coinbaseClientMock;
+    private readonly Mock<StatePersistenceService> _persistenceServiceMock;
+    private readonly Mock<IHubContext<ArbitrageApi.Hubs.ArbitrageHub>> _hubContextMock;
+    private readonly ChannelProvider _channelProvider;
+    private readonly Mock<ArbitrageStatsService> _statsServiceMock;
+    private readonly Mock<RebalancingService> _rebalancingServiceMock;
     private readonly TradeService _tradeService;
 
     public TradeServiceTests()
@@ -38,10 +45,34 @@ public class TradeServiceTests
 
         var clients = new List<IExchangeClient> { _binanceClientMock.Object, _coinbaseClientMock.Object };
 
+        // Initialize Mocks for Concrete Dependencies
+        _persistenceServiceMock = new Mock<StatePersistenceService>(new Mock<ILogger<StatePersistenceService>>().Object);
+        _persistenceServiceMock.Setup(x => x.GetState()).Returns(new AppState());
+
+        _hubContextMock = new Mock<IHubContext<ArbitrageApi.Hubs.ArbitrageHub>>();
+        var mockClients = new Mock<IHubClients>();
+        var mockClientProxy = new Mock<IClientProxy>();
+        mockClients.Setup(c => c.All).Returns(mockClientProxy.Object);
+        _hubContextMock.Setup(h => h.Clients).Returns(mockClients.Object);
+
+        _channelProvider = new ChannelProvider();
+
+        _rebalancingServiceMock = new Mock<RebalancingService>(new Mock<ILogger<RebalancingService>>().Object, new List<IExchangeClient>());
+        _rebalancingServiceMock.Setup(x => x.GetSkew(It.IsAny<string>())).Returns(0m);
+
+        // Pass nulls to base constructor of StatsService as we mock the method we need
+        _statsServiceMock = new Mock<ArbitrageStatsService>(null!, null!, null!, null!);
+        _statsServiceMock.Setup(x => x.GetStatsAsync()).ReturnsAsync(new StatsResponse());
+
         _tradeService = new TradeService(
             _loggerMock.Object,
             clients,
-            _configuration
+            _configuration,
+            _persistenceServiceMock.Object,
+            _hubContextMock.Object,
+            _channelProvider,
+            _statsServiceMock.Object,
+            _rebalancingServiceMock.Object
         );
     }
 

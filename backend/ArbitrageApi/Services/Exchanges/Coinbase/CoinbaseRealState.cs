@@ -50,14 +50,25 @@ public class CoinbaseRealState : CoinbaseBaseState
             request.Headers.Add("CB-ACCESS-TIMESTAMP", timestamp);
 
             var response = await HttpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return (0.005m, 0.005m);
-
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.LogWarning("Coinbase fee API returned {StatusCode}", response.StatusCode);
+                return (0.001m, 0.001m);
+            }
+            
             var summary = await response.Content.ReadFromJsonAsync<CoinbaseFeeResponse>();
-            return summary?.FeeTier == null ? (0.005m, 0.005m) : (summary.FeeTier.MakerFeeRate, summary.FeeTier.TakerFeeRate);
+            if (summary?.FeeTier != null)
+            {
+                return (summary.FeeTier.MakerFeeRate, summary.FeeTier.TakerFeeRate);
+            }
+            
+            return (0.001m, 0.001m);
         }
-        catch
+        catch (Exception ex)
         {
-            return (0.005m, 0.005m);
+            Logger.LogError(ex, "Error fetching Coinbase fees");
+            return (0.001m, 0.001m);
         }
     }
 
@@ -72,31 +83,36 @@ public class CoinbaseRealState : CoinbaseBaseState
 
             if (accountResponse?.Accounts == null)
             {
-                Logger.LogWarning("Coinbase accounts response or accounts list is null");
-                return new List<Balance>();
+                Logger.LogWarning("Coinbase accounts response or accounts list is null, using cache.");
+                return CachedBalances;
             }
 
-            var result = accountResponse.Accounts
-                .Where(a => a.AvailableBalance != null && a.Hold != null)
+            var freshBalances = accountResponse.Accounts
+                .Where(a => a.AvailableBalance?.Value != null || a.Hold?.Value != null)
                 .Where(a => {
-                    var available = decimal.TryParse(a.AvailableBalance.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var av) ? av : 0;
-                    var hold = decimal.TryParse(a.Hold.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var h) ? h : 0;
+                    var available = decimal.TryParse(a.AvailableBalance?.Value ?? "0", System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var av) ? av : 0;
+                    var hold = decimal.TryParse(a.Hold?.Value ?? "0", System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var h) ? h : 0;
                     return available > 0 || hold > 0;
                 })
                 .Select(a => new Balance
                 {
                     Asset = a.Currency ?? "UNKNOWN",
-                    Free = decimal.TryParse(a.AvailableBalance.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var av) ? av : 0,
-                    Locked = decimal.TryParse(a.Hold.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var h) ? h : 0
+                    Free = decimal.TryParse(a.AvailableBalance?.Value ?? "0", System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var av) ? av : 0,
+                    Locked = decimal.TryParse(a.Hold?.Value ?? "0", System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var h) ? h : 0
                 }).ToList();
 
-            Logger.LogInformation("Fetched {Count} balances from Coinbase", result.Count);
-            return result;
+            if (freshBalances.Any())
+            {
+                CachedBalances = freshBalances;
+            }
+
+            Logger.LogInformation("Fetched {Count} balances from Coinbase", freshBalances.Count);
+            return freshBalances;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error fetching balances from Coinbase");
-            return new List<Balance>();
+            Logger.LogError(ex, "Error fetching balances from Coinbase, returning cache.");
+            return CachedBalances;
         }
     }
 

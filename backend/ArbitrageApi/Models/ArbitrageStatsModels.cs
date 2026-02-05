@@ -35,14 +35,24 @@ public class HourDetail
 {
     public double AvgOpportunitiesPerHour { get; set; }
     public decimal AvgSpread { get; set; }
+    public decimal MaxSpread { get; set; }
+    public int Count { get; set; }
     public decimal AvgDepth { get; set; }
     public string DirectionBias { get; set; } = string.Empty;
     public decimal VolatilityScore { get; set; }
     public string Zone { get; set; } = string.Empty;
 }
 
+public class RebalancingInfo
+{
+    public Dictionary<string, decimal> AssetSkews { get; set; } = new(); // -1.0 (heavy Coinbase) to 1.0 (heavy Binance)
+    public string Recommendation { get; set; } = string.Empty;
+    public decimal EfficiencyScore { get; set; }
+}
+
 public class StatsResponse
 {
     public StatsSummary Summary { get; set; } = new();
     public Dictionary<string, Dictionary<string, HourDetail>> Calendar { get; set; } = new();
+    public RebalancingInfo Rebalancing { get; set; } = new();
 }

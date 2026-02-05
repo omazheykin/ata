@@ -7,6 +7,7 @@ public interface IExchangeState
     Task<ExchangePrice?> GetPriceAsync(string symbol);
     Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols);
     Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
+    Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync();
     Task<List<Balance>> GetBalancesAsync();
     Task UpdateSymbolMappingWithSupportedProductsAsync();
     

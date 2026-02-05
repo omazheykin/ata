@@ -23,7 +23,25 @@ public class TradingPair
         new TradingPair("ADA", "USDT"),
         new TradingPair("AVAX", "USDT"),
         new TradingPair("DOT", "USDT"),
-        new TradingPair("MATIC", "USDT"),
+        new TradingPair("POL", "USDT"),
         new TradingPair("LINK", "USDT")
     };
+
+    public string GetCoinbaseSymbol()
+    {
+        // Coinbase uses BASE-USD format for most pairs
+        // Handle POL rebranding if needed, though POL-USD is standard on Coinbase now
+        return $"{BaseAsset}-USD";
+    }
+
+    public string GetBinanceSymbol()
+    {
+        return $"{BaseAsset}{QuoteAsset}";
+    }
+
+    public string GetOKXSymbol()
+    {
+        // OKX uses BASE-QUOTE format with hyphen (e.g., BTC-USDT)
+        return $"{BaseAsset}-{QuoteAsset}";
+    }
 }

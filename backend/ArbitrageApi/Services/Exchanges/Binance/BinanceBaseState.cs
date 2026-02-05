@@ -20,6 +20,11 @@ public abstract class BinanceBaseState : IExchangeState
         { "MATICUSDT", "POLUSDT" }
     };
 
+    private (decimal Maker, decimal Taker)? _cachedFees;
+    private DateTime _lastFeeUpdate = DateTime.MinValue;
+    private readonly TimeSpan _feeTtl = TimeSpan.FromMinutes(5);
+    protected List<Balance> CachedBalances = new();
+
     protected BinanceBaseState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, string baseUrl)
     {
         HttpClient = httpClient;
@@ -90,6 +95,29 @@ public abstract class BinanceBaseState : IExchangeState
     }
 
     public abstract Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
+
+    public virtual async Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync()
+    {
+        if (_cachedFees != null && (DateTime.UtcNow - _lastFeeUpdate) < _feeTtl)
+        {
+            Logger.LogDebug("💰 [Binance] Using cached fees: Maker={Maker}, Taker={Taker}", _cachedFees.Value.Maker, _cachedFees.Value.Taker);
+            return _cachedFees;
+        }
+
+        Logger.LogInformation("🔄 [Binance] Fetching fresh fees from API...");
+        var fees = await GetSpotFeesAsync();
+        if (fees != null)
+        {
+            _cachedFees = fees;
+            _lastFeeUpdate = DateTime.UtcNow;
+            Logger.LogInformation("✅ [Binance] Fees retrieved: Maker={Maker}, Taker={Taker}", fees.Value.Maker, fees.Value.Taker);
+        }
+        else
+        {
+            Logger.LogWarning("⚠️ [Binance] Failed to retrieve fees, using default: 0.001 (0.1%)");
+        }
+        return _cachedFees ?? (0.001m, 0.001m);
+    }
     public abstract Task<List<Balance>> GetBalancesAsync();
 
     public async Task UpdateSymbolMappingWithSupportedProductsAsync()

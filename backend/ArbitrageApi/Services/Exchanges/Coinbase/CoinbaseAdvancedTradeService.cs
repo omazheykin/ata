@@ -36,6 +36,12 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
       /// </summary>
       private string GenerateJwt(string method, string requestPath)
       {
+         // 1) Validate keys
+         if (string.IsNullOrWhiteSpace(_keySecret))
+            throw new Exception("Coinbase API Secret (Private Key) is missing or empty in configuration.");
+         if (string.IsNullOrWhiteSpace(_keyName))
+            throw new Exception("Coinbase API Key Name (ID) is missing or empty in configuration.");
+
          var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
          var expirationTime = now + 120; // 2 minutes expiration
 
@@ -47,8 +53,10 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
          // Note: Coinbase docs say "METHOD HOST/PATH", query parameters are NOT included in the URI field of the payload
          var uri = $"{method} api.coinbase.com{path}";
 
-         // Parse the private key from PEM format
-         var privateKeyBytes = ExtractPrivateKeyFromPem(_keySecret);
+         // 2) Parse the private key
+         // Handle literal "\n" strings if they were pasted into JSON as escape sequences
+         string normalizedKey = _keySecret.Replace("\\n", "\n");
+         var privateKeyBytes = ExtractPrivateKeyFromPem(normalizedKey);
 
          using (var key = ECDsa.Create())
          {
@@ -56,15 +64,15 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
             {
                key.ImportECPrivateKey(privateKeyBytes, out _);
             }
-            catch
+            catch (Exception ex)
             {
                try
                {
                   key.ImportPkcs8PrivateKey(privateKeyBytes, out _);
                }
-               catch (Exception ex)
+               catch
                {
-                  throw new Exception("Failed to import EC private key. Ensure it is in SEC1 or PKCS#8 format.", ex);
+                  throw new Exception("Failed to import Coinbase EC private key. Ensure it is in SEC1 or PKCS#8 format and the API Secret is correctly configured.", ex);
                }
             }
 
@@ -134,12 +142,8 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
       /// </summary>
       private string GenerateRandomHex(int length)
       {
-         using (var rng = new RNGCryptoServiceProvider())
-         {
-            var buffer = new byte[length / 2];
-            rng.GetBytes(buffer);
-            return BitConverter.ToString(buffer).Replace("-", "").ToLower();
-         }
+         var buffer = RandomNumberGenerator.GetBytes(length / 2);
+         return BitConverter.ToString(buffer).Replace("-", "").ToLower();
       }
 
       /// <summary>
@@ -287,7 +291,7 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
             var content = await response.Content.ReadAsStringAsync();
             var orderBook = System.Text.Json.JsonSerializer.Deserialize<ProductBookResponse>(content);
 
-            return orderBook;
+            return orderBook ?? new ProductBookResponse();
          }
          catch (Exception ex)
          {
@@ -363,7 +367,7 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
                      throw new Exception($"API Error ({response.StatusCode}): {content}");
                   }
 
-                  return JsonSerializer.Deserialize<AccountsResponse>(content);
+                  return JsonSerializer.Deserialize<AccountsResponse>(content) ?? new AccountsResponse();
                }
             }
          }
@@ -398,8 +402,10 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
                      throw new Exception($"API Error ({response.StatusCode}): {content}");
                   }
 
-                  var accountResponse = JsonSerializer.Deserialize<JsonElement>(content);
-                  return JsonSerializer.Deserialize<Account>(accountResponse.GetProperty("account").GetRawText());
+                  using var doc = JsonDocument.Parse(content);
+                  var accountJson = doc.RootElement.GetProperty("account").GetRawText();
+                  var account = JsonSerializer.Deserialize<Account>(accountJson);
+                  return account ?? throw new Exception("Failed to deserialize account.");
                }
             }
          }
@@ -456,16 +462,16 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
 public class OrderBookLevel
 {
    [JsonPropertyName("price")]
-   public string Price { get; set; }
+   public string? Price { get; set; }
 
    [JsonPropertyName("size")]
-   public string Size { get; set; }
+   public string? Size { get; set; }
 }
 
 public class PriceBook
 {
    [JsonPropertyName("product_id")]
-   public string ProductId { get; set; }
+   public string? ProductId { get; set; }
 
    [JsonPropertyName("bids")]
    public List<OrderBookLevel> Bids { get; set; } = new();
@@ -474,22 +480,22 @@ public class PriceBook
    public List<OrderBookLevel> Asks { get; set; } = new();
 
    [JsonPropertyName("time")]
-   public string Time { get; set; }
+   public string? Time { get; set; }
 
    [JsonPropertyName("sequence")]
-   public string Sequence { get; set; }
+   public string? Sequence { get; set; }
 }
 
 public class ProductBookResponse
 {
    [JsonPropertyName("pricebook")]
-   public PriceBook PriceBook { get; set; }
+   public PriceBook? PriceBook { get; set; }
 }
 
 public class CoinbaseOrderBookResponse
 {
    [JsonPropertyName("product_id")]
-   public string ProductId { get; set; }
+   public string? ProductId { get; set; }
 
    [JsonPropertyName("bids")]
    public List<List<string>> Bids { get; set; } = new();
@@ -498,10 +504,10 @@ public class CoinbaseOrderBookResponse
    public List<List<string>> Asks { get; set; } = new();
 
    [JsonPropertyName("time")]
-   public string Time { get; set; }
+   public string? Time { get; set; }
 
    [JsonPropertyName("sequence")]
-   public string Sequence { get; set; }
+   public string? Sequence { get; set; }
 }
 
 public class CoinbaseAmount
@@ -554,26 +560,26 @@ public class CoinbaseExchangeFeeResponse
 public class CoinbaseProduct
 {
    [JsonPropertyName("product_id")]
-   public string ProductId { get; set; }
+   public string? ProductId { get; set; }
 
    [JsonPropertyName("base_currency")]
-   public string BaseCurrency { get; set; }
+   public string? BaseCurrency { get; set; }
 
    [JsonPropertyName("quote_currency")]
-   public string QuoteCurrency { get; set; }
+   public string? QuoteCurrency { get; set; }
 
    [JsonPropertyName("display_name")]
-   public string DisplayName { get; set; }
+   public string? DisplayName { get; set; }
 
    [JsonPropertyName("status")]
-   public string Status { get; set; }
+   public string? Status { get; set; }
 
 }
 
 public class ProductsResponse
 {
    [JsonPropertyName("products")]
-   public List<CoinbaseProduct> Products { get; set; }
+   public List<CoinbaseProduct> Products { get; set; } = new();
 }
 
 /// <summary>
@@ -582,16 +588,16 @@ public class ProductsResponse
 public class Account
 {
    [JsonPropertyName("uuid")]
-   public string Uuid { get; set; }
+   public string? Uuid { get; set; }
 
    [JsonPropertyName("name")]
-   public string Name { get; set; }
+   public string? Name { get; set; }
 
    [JsonPropertyName("currency")]
-   public string Currency { get; set; }
+   public string? Currency { get; set; }
 
    [JsonPropertyName("available_balance")]
-   public AvailableBalance AvailableBalance { get; set; }
+   public AvailableBalance? AvailableBalance { get; set; }
 
    [JsonPropertyName("default")]
    public bool Default { get; set; }
@@ -609,31 +615,31 @@ public class Account
    public DateTime? DeletedAt { get; set; }
 
    [JsonPropertyName("type")]
-   public string Type { get; set; }
+   public string? Type { get; set; }
 
    [JsonPropertyName("ready")]
    public bool Ready { get; set; }
 
    [JsonPropertyName("hold")]
-   public Hold Hold { get; set; }
+   public Hold? Hold { get; set; }
 }
 
 public class AvailableBalance
 {
    [JsonPropertyName("value")]
-   public string Value { get; set; }
+   public string? Value { get; set; }
 
    [JsonPropertyName("currency")]
-   public string Currency { get; set; }
+   public string? Currency { get; set; }
 }
 
 public class Hold
 {
    [JsonPropertyName("value")]
-   public string Value { get; set; }
+   public string? Value { get; set; }
 
    [JsonPropertyName("currency")]
-   public string Currency { get; set; }
+   public string? Currency { get; set; }
 }
 
 public class AccountsResponse

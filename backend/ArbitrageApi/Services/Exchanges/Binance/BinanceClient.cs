@@ -17,21 +17,21 @@ public class BinanceClient : IExchangeClient
 
     public string ExchangeName => "Binance";
 
-    public BinanceClient(HttpClient httpClient, ILogger<BinanceClient> logger, IConfiguration configuration)
+    public BinanceClient(HttpClient httpClient, ILogger<BinanceClient> logger, IConfiguration configuration, bool isSandboxMode = false)
     {
         _httpClient = httpClient;
         _logger = logger;
-
+        _isSandbox = isSandboxMode;
+        
         var realApiKey = configuration["Binance:ApiKey"] ?? string.Empty;
         var realApiSecret = configuration["Binance:ApiSecret"] ?? string.Empty;
         var sandboxApiKey = configuration["Binance:SandboxApiKey"] ?? string.Empty;
         var sandboxApiSecret = configuration["Binance:SandboxApiSecret"] ?? string.Empty;
 
         _realState = new BinanceRealState(httpClient, logger, realApiKey, realApiSecret);
-        _sandboxState = new BinanceSandboxState(httpClient, logger, sandboxApiKey, sandboxApiSecret);
+        _sandboxState = new BinanceSandboxState(httpClient, logger, sandboxApiKey, sandboxApiSecret, _realState);
         
-        _currentState = _realState;
-        _isSandbox = false;
+        _currentState = _isSandbox ? _sandboxState : _realState;
     }
 
     public void SetSandboxMode(bool enabled)
@@ -42,6 +42,7 @@ public class BinanceClient : IExchangeClient
     }
 
     public Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync() => _currentState.GetSpotFeesAsync();
+    public Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync() => _currentState.GetCachedFeesAsync();
     public Task<ExchangePrice?> GetPriceAsync(string symbol) => _currentState.GetPriceAsync(symbol);
     public Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols) => _currentState.GetPricesAsync(symbols);
     public Task<List<Balance>> GetBalancesAsync() => _currentState.GetBalancesAsync();

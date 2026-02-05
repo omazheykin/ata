@@ -12,12 +12,16 @@ namespace ArbitrageApi.Tests.Services.Exchanges.Binance;
 public class BinanceSandboxStateTests
 {
     private readonly Mock<ILogger> _loggerMock;
+    private readonly Mock<IExchangeState> _realStateMock;
     private readonly BinanceSandboxState _sandboxState;
     private readonly HttpClient _httpClient;
 
     public BinanceSandboxStateTests()
     {
         _loggerMock = new Mock<ILogger>();
+        _realStateMock = new Mock<IExchangeState>();
+        _realStateMock.Setup(x => x.GetPriceAsync(It.IsAny<string>()))
+            .ReturnsAsync(new ExchangePrice { Price = 50000.00m, Timestamp = DateTime.UtcNow });
         
         var handler = MockHttpMessageHandler.CreateWithJsonResponse(new { price = "50000.00" });
         _httpClient = new HttpClient(handler);
@@ -26,7 +30,8 @@ public class BinanceSandboxStateTests
             _httpClient,
             _loggerMock.Object,
             "test-api-key",
-            "test-api-secret"
+            "test-api-secret",
+            _realStateMock.Object
         );
     }
 
@@ -51,7 +56,7 @@ public class BinanceSandboxStateTests
         var finalBtc = finalBalances.First(b => b.Asset == "BTC").Free;
 
         finalUsd.Should().BeLessThan(initialUsd);
-        finalBtc.Should().BeGreaterThan(0.5m); // Initial was 0.5
+        finalBtc.Should().BeGreaterThan(10000m); // Initial was 10000
     }
 
     [Fact]
@@ -92,6 +97,6 @@ public class BinanceSandboxStateTests
 
         // Assert
         balances.Should().Contain(b => b.Asset == "USD" && b.Free == 10000m);
-        balances.Should().Contain(b => b.Asset == "BTC" && b.Free == 0.5m);
+        balances.Should().Contain(b => b.Asset == "BTC" && b.Free == 10000m);
     }
 }

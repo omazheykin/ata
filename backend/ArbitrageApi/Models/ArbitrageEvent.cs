@@ -24,4 +24,7 @@ public class ArbitrageEvent
 
     [Required]
     public DateTime Timestamp { get; set; }
+
+    [Required]
+    public decimal SpreadPercent { get; set; }
 }

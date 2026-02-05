@@ -7,6 +7,15 @@ public class AppState
     public bool IsSandboxMode { get; set; } = false;
     public bool IsAutoTradeEnabled { get; set; } = false;
     public decimal MinProfitThreshold { get; set; } = 0.5m;
+    public bool IsSmartStrategyEnabled { get; set; } = true;
+    public decimal SafeBalanceMultiplier { get; set; } = 0.3m;
+    public bool UseTakerFees { get; set; } = true;
+    public Dictionary<string, decimal> PairThresholds { get; set; } = new()
+    {
+        { "BTCUSDT", 0.05m },
+        { "ETHUSDT", 0.05m },
+        { "SOLUSDT", 0.15m }
+    };
 }
 
 public class StatePersistenceService
@@ -22,9 +31,9 @@ public class StatePersistenceService
         _currentState = LoadState();
     }
 
-    public AppState GetState() => _currentState;
+    public virtual AppState GetState() => _currentState;
 
-    public void SaveState(AppState state)
+    public virtual void SaveState(AppState state)
     {
         try
         {

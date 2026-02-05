@@ -1,7 +1,17 @@
 import axios from 'axios';
-import type { ArbitrageOpportunity, Statistics, Balance, Transaction } from '../types/types';
+import type { 
+    ArbitrageOpportunity, 
+    Statistics, 
+    Balance, 
+    Transaction, 
+    StatsResponse, 
+    StrategyUpdate, 
+    ArbitrageEvent,
+    HeatmapCellDetail,
+    AppState
+} from '../types/types';
 
-const API_BASE_URL = 'https://localhost:5001/api';
+const API_BASE_URL = 'http://localhost:5000/api';
 
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -19,6 +29,11 @@ export const apiService = {
 
     async getStatistics(): Promise<Statistics> {
         const response = await apiClient.get<Statistics>('/arbitrage/statistics');
+        return response.data;
+    },
+
+    async getDetailedStats(): Promise<StatsResponse> {
+        const response = await apiClient.get<StatsResponse>('/statistics');
         return response.data;
     },
 
@@ -72,6 +87,41 @@ export const apiService = {
         return response.data;
     },
 
+    async getSmartStrategy(): Promise<{ enabled: boolean }> {
+        const response = await apiClient.get<{ enabled: boolean }>('/settings/smart-strategy');
+        return response.data;
+    },
+
+    async toggleSmartStrategy(enabled: boolean): Promise<{ enabled: boolean }> {
+        const response = await apiClient.post<{ enabled: boolean }>(`/settings/smart-strategy?enabled=${enabled}`);
+        return response.data;
+    },
+
+    async getStrategyStatus(): Promise<StrategyUpdate> {
+        const response = await apiClient.get<StrategyUpdate>('/settings/strategy-status');
+        return response.data;
+    },
+
+    async getFullState(): Promise<AppState> {
+        const response = await apiClient.get<AppState>('/settings/state');
+        return response.data;
+    },
+
+    async setPairThresholds(thresholds: Record<string, number>): Promise<Record<string, number>> {
+        const response = await apiClient.post<Record<string, number>>('/settings/pair-thresholds', thresholds);
+        return response.data;
+    },
+
+    async setSafeMultiplier(multiplier: number): Promise<{ multiplier: number }> {
+        const response = await apiClient.post<{ multiplier: number }>(`/settings/safe-multiplier?multiplier=${multiplier}`);
+        return response.data;
+    },
+
+    async setUseTakerFees(enabled: boolean): Promise<{ enabled: boolean }> {
+        const response = await apiClient.post<{ enabled: boolean }>(`/settings/taker-fees?enabled=${enabled}`);
+        return response.data;
+    },
+
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {
             exchange,
@@ -84,6 +134,31 @@ export const apiService = {
     async executeTrade(opportunity: ArbitrageOpportunity): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/trade/execute', opportunity);
         return response.data;
+    },
+
+    async getEventsByPair(pair: string): Promise<ArbitrageEvent[]> {
+        const response = await apiClient.get<ArbitrageEvent[]>(`/statistics/events/${pair}`);
+        return response.data;
+    },
+
+    async getCellDetails(day: string, hour: number): Promise<HeatmapCellDetail> {
+        const response = await apiClient.get<HeatmapCellDetail>(`/statistics/cell-details?day=${day}&hour=${hour}`);
+        return response.data;
+    },
+
+    async downloadZippedExport(day: string, hour: number): Promise<void> {
+        const response = await apiClient.get(`/statistics/export-zipped?day=${day}&hour=${hour}`, {
+            responseType: 'blob'
+        });
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Arbitrage_Activity_${day}_${hour.toString().padStart(2, "0")}-00.zip`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     },
 };
 

@@ -9,6 +9,7 @@ public interface IExchangeClient
     Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols);
     List<string> GetSupportedSymbols();
     Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
+    Task<(decimal Maker, decimal Taker)?> GetCachedFeesAsync();
     Task<List<Balance>> GetBalancesAsync();
     void SetSandboxMode(bool enabled);
 
