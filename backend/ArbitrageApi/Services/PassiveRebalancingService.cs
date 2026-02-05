@@ -56,40 +56,31 @@ public class PassiveRebalancingService : BackgroundService
         if (opportunity.ProfitPercentage < AbsoluteMinProfit) return;
 
         var asset = opportunity.Asset;
-        var skew = _rebalancingService.GetSkew(asset); // -1.0 (heavy CB) to 1.0 (heavy Binance)
-
-        // Skew > 0 means we are heavy on Binance. We want to SELL on Binance (or BUY on Coinbase).
-        // Skew < 0 means we are heavy on Coinbase. We want to SELL on Coinbase (or BUY on Binance).
-
-        // Opportunity: BuyExchange -> SellExchange
-        bool buyingOnBinance = opportunity.BuyExchange == "Binance";
-        bool sellingOnBinance = opportunity.SellExchange == "Binance";
         
-        bool buyingOnCoinbase = opportunity.BuyExchange == "Coinbase";
-        bool sellingOnCoinbase = opportunity.SellExchange == "Coinbase";
-        
+        // N-Exchange Logic: check deviation of Source (Sell) and Target (Buy)
+        var sellDeviation = _rebalancingService.GetDeviation(asset, opportunity.SellExchange);
+        var buyDeviation = _rebalancingService.GetDeviation(asset, opportunity.BuyExchange);
+
         bool improvesSkew = false;
         decimal incentiveScore = 0m;
+        
+        // Use the configured threshold (e.g. 0.1 / 10%)
+        decimal threshold = state.MinRebalanceSkewThreshold;
 
-        if (skew > 0.1m) // Heavily skewed to Binance
+        // Ideal Scenario: Moving from Overweight (> Threshold) to Underweight (< -Threshold)
+        // ex: Selling on Exchange A (+0.5) to Buy on Exchange B (-0.5)
+        if (sellDeviation > threshold && buyDeviation < -threshold)
         {
-            // We want to move funds OUT of Binance (Sell on Binance) OR INTO Coinbase (Buy on Coinbase, implicitly selling elsewhere)
-            // Ideal trade: Buy Coinbase -> Sell Binance
-            if (sellingOnBinance && buyingOnCoinbase)
-            {
-                improvesSkew = true;
-                incentiveScore = skew; // Higher skew = higher incentive
-            }
+            improvesSkew = true;
+            // Combined magnitude of the correction
+            incentiveScore = sellDeviation + Math.Abs(buyDeviation);
         }
-        else if (skew < -0.1m) // Heavily skewed to Coinbase
+        // Desperate Scenario: Source is Extremely Overweight (> 2x Threshold)
+        // We need to sell regardless of target state (unless target is also super heavy, which is unlikely due to mean property)
+        else if (sellDeviation > (threshold * 2))
         {
-            // We want to move funds OUT of Coinbase (Sell on Coinbase) OR INTO Binance
-            // Ideal trade: Buy Binance -> Sell Coinbase
-            if (sellingOnCoinbase && buyingOnBinance)
-            {
-                improvesSkew = true;
-                incentiveScore = Math.Abs(skew);
-            }
+             improvesSkew = true;
+             incentiveScore = sellDeviation; 
         }
 
         if (improvesSkew)
@@ -108,8 +99,8 @@ public class PassiveRebalancingService : BackgroundService
 
             if (opportunity.ProfitPercentage >= specificThreshold)
             {
-                _logger.LogInformation("⚖️ PASSIVE REBALANCE: Executing {Symbol} @ {Profit}% (Skew: {Skew:F2}). Trade improves inventory!", 
-                    opportunity.Symbol, opportunity.ProfitPercentage, skew);
+                _logger.LogInformation("⚖️ PASSIVE REBALANCE: Executing {Symbol} @ {Profit}% (Score: {Score:F2}). Trade improves inventory!", 
+                    opportunity.Symbol, opportunity.ProfitPercentage, incentiveScore);
                 
                 await _executionService.ExecuteTradeAsync(opportunity, specificThreshold, ct);
             }

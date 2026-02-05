@@ -52,45 +52,38 @@ public class PassiveRebalancingServiceTests
             IsAutoTradeEnabled = autoTrade,
             IsSafetyKillSwitchTriggered = killSwitch,
             MinProfitThreshold = minProfit,
-            PairThresholds = new Dictionary<string, decimal>()
+            PairThresholds = new Dictionary<string, decimal>(),
+            MinRebalanceSkewThreshold = 0.1m // 10% deviation threshold
         };
         _persistenceServiceMock.Setup(s => s.GetState()).Returns(state);
     }
 
     [Fact]
-    public async Task Execute_When_SkewPositive_And_SellingOnBinance_ShouldExecute()
+    public async Task Execute_When_MovingFromHeavyToLight_ShouldExecute()
     {
         // Arrange
         SetupState();
         
-        // Positive Skew = Heavy on Binance. We want to SELL on Binance.
-        _rebalancingServiceMock.Setup(r => r.GetSkew("BTC")).Returns(0.8m); 
+        // Scenario: Binance is Heavy (+0.5), Coinbase is Light (-0.5).
+        // Trade: Sell Binance -> Buy Coinbase.
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Binance")).Returns(0.5m);
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Coinbase")).Returns(-0.5m);
 
         var chance = new ArbitrageOpportunity
         {
             Symbol = "BTC-USDT",
             Asset = "BTC",
-            BuyExchange = "Coinbase",
-            SellExchange = "Binance", // Selling on Binance reduces the heavy bag -> GOOD
+            BuyExchange = "Coinbase", // Target (Light)
+            SellExchange = "Binance", // Source (Heavy)
             ProfitPercentage = 0.2m // Low profit, below default 0.5%
         };
 
         // Act
-        // We write to channel and wait a bit for background service to process
-        // But since we can't easily wait for "processed", we might extract the processing method logic 
-        // OR we can rely on verifying the mock call.
-        // To test robustly without waiting for background thread race conditions, 
-        // we can invoke the private ProcessOpportunityAsync via reflection or just trust the loop 
-        // if we run the service briefly.
-        // BETTER: Refactor service to have public Process method? 
-        // For now, let's start the service, write, and wait.
-        
         using var cts = new CancellationTokenSource(5000);
         var task = _service.StartAsync(cts.Token);
         
         await _channelProvider.PassiveRebalanceChannel.Writer.WriteAsync(chance);
         
-        // Allow some time for processing
         await Task.Delay(100); 
         await _service.StopAsync(CancellationToken.None);
 
@@ -103,21 +96,23 @@ public class PassiveRebalancingServiceTests
     }
 
     [Fact]
-    public async Task Ignore_When_SkewPositive_And_BuyingOnBinance_ShouldIgnore()
+    public async Task Ignore_When_MovingFromLightToHeavy_ShouldIgnore()
     {
         // Arrange
         SetupState();
         
-        // Positive Skew = Heavy on Binance. 
-        // Buying on Binance (Sell Coinbase) -> Makes skew WORSE (Heavy -> Heaviers)
-        _rebalancingServiceMock.Setup(r => r.GetSkew("BTC")).Returns(0.8m); 
+        // Scenario: Binance is Heavy (+0.5), Coinbase is Light (-0.5).
+        // Bad Trade: Buy Binance (Target +0.5), Sell Coinbase (Source -0.5).
+        // Source (-0.5) is NOT > Threshold (0.1).
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Binance")).Returns(0.5m);
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Coinbase")).Returns(-0.5m);
 
         var chance = new ArbitrageOpportunity
         {
             Symbol = "BTC-USDT",
             Asset = "BTC",
-            BuyExchange = "Binance", // Buying on Binance increases skew -> BAD
-            SellExchange = "Coinbase", 
+            BuyExchange = "Binance", // Target (Heavy) -> BAD
+            SellExchange = "Coinbase", // Source (Light) -> BAD
             ProfitPercentage = 0.2m 
         };
 
@@ -130,7 +125,6 @@ public class PassiveRebalancingServiceTests
         await _service.StopAsync(CancellationToken.None);
 
         // Assert
-        // Should NOT execute
         _executionServiceMock.Verify(x => x.ExecuteTradeAsync(
             It.IsAny<ArbitrageOpportunity>(), 
             It.IsAny<decimal>(), 
@@ -142,7 +136,8 @@ public class PassiveRebalancingServiceTests
     {
         // Arrange
         SetupState(killSwitch: true);
-        _rebalancingServiceMock.Setup(r => r.GetSkew("BTC")).Returns(0.8m); 
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Binance")).Returns(0.5m);
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Coinbase")).Returns(-0.5m);
 
         var chance = new ArbitrageOpportunity
         {
@@ -173,7 +168,8 @@ public class PassiveRebalancingServiceTests
     {
         // Arrange
         SetupState();
-        _rebalancingServiceMock.Setup(r => r.GetSkew("BTC")).Returns(0.8m); 
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Binance")).Returns(0.5m);
+        _rebalancingServiceMock.Setup(r => r.GetDeviation("BTC", "Coinbase")).Returns(-0.5m);
 
         var chance = new ArbitrageOpportunity
         {

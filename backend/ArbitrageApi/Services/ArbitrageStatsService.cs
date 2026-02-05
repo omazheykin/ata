@@ -284,27 +284,58 @@ public class ArbitrageStatsService : BackgroundService
             metrics.FirstOrDefault(m => m.Id == "Global:Total"), maxHourlyCount);
 
         // 7. Rebalancing Info
-        var skews = _rebalancingService.GetAllSkews();
-        response.Rebalancing.AssetSkews = skews;
+        // 7. Rebalancing Info (Updated for N Exchanges)
+        var deviations = _rebalancingService.GetAllDeviations();
+        response.Rebalancing.AssetDeviations = deviations;
         response.Rebalancing.Proposals = _rebalancingService.GetProposals();
         
-        if (skews.Any())
+        // Calculate Legacy "Skews" for frontend compatibility (Visual indicator of imbalance magnitude)
+        // We'll use the Max Absolute Deviation as the "Skew" factor
+        var legacySkews = new Dictionary<string, decimal>();
+        decimal globalMaxDeviation = 0m;
+
+        foreach (var assetKvp in deviations)
         {
-            var maxSkew = skews.Values.Max(Math.Abs);
-            var worstAsset = skews.OrderByDescending(x => Math.Abs(x.Value)).First();
+            var asset = assetKvp.Key;
+            var exchangeDevs = assetKvp.Value;
             
-            if (maxSkew > 0.3m)
+            if (exchangeDevs.Any())
             {
-                response.Rebalancing.Recommendation = worstAsset.Value > 0 
-                    ? $"Withdraw {worstAsset.Key} from Binance to Coinbase" 
-                    : $"Withdraw {worstAsset.Key} from Coinbase to Binance";
+                // Max deviation tells us how far the most imbalanced exchange is
+                var maxDev = exchangeDevs.Values.Select(Math.Abs).Max();
+                
+                // Directionality for legacy single-value skew? 
+                // It was -1 (Coinbase) to 1 (Binance). 
+                // Hard to map 3 exchanges to 1 dimension.
+                // We'll just provide the Magnitude (positive) for alerting purposes.
+                legacySkews[asset] = maxDev;
+
+                if (maxDev > globalMaxDeviation) globalMaxDeviation = maxDev;
+            }
+        }
+        response.Rebalancing.AssetSkews = legacySkews; // Filled with magnitude (0 to 1.0 approx)
+
+        if (deviations.Any())
+        {
+            // Efficiency Score = 1.0 - Max Deviation
+            response.Rebalancing.EfficiencyScore = Math.Max(0, 1.0m - globalMaxDeviation);
+
+            // Recommendation Logic
+            if (globalMaxDeviation > 0.3m) // 30% deviation
+            {
+                // Find worst asset
+                var worstAsset = legacySkews.MaxBy(x => x.Value);
+                if (worstAsset.Key != null && deviations.TryGetValue(worstAsset.Key, out var worstAssetDevs))
+                {
+                    var heavy = worstAssetDevs.MaxBy(x => x.Value);
+                    var light = worstAssetDevs.MinBy(x => x.Value);
+                    response.Rebalancing.Recommendation = $"Rebalance {worstAsset.Key}: Move from {heavy.Key} to {light.Key}";
+                }
             }
             else
             {
                 response.Rebalancing.Recommendation = "Inventories are well-balanced.";
             }
-            
-            response.Rebalancing.EfficiencyScore = 1.0m - maxSkew;
         }
 
         return response;

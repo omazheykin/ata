@@ -111,6 +111,7 @@ builder.Services.AddSingleton<ChannelProvider>();
 builder.Services.AddSingleton<StatePersistenceService>();
 builder.Services.AddSingleton<ITrendAnalysisService, TrendAnalysisService>();
 builder.Services.AddSingleton<RebalancingService>();
+builder.Services.AddSingleton<IRebalancingService>(sp => sp.GetRequiredService<RebalancingService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RebalancingService>());
 builder.Services.AddSingleton<OrderExecutionService>();
 builder.Services.AddSingleton<PassiveRebalancingService>();
