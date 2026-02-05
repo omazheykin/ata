@@ -14,6 +14,12 @@ public class Transaction
     public decimal Fee { get; set; }
     public decimal Profit { get; set; }
     public string Status { get; set; } = "Success";
+
+    // PnL Tracking
+    public decimal RealizedProfit { get; set; }
+    public decimal TotalFees { get; set; }
+    public decimal BuyCost { get; set; }
+    public decimal SellProceeds { get; set; }
     
     // Order tracking fields
     public string? BuyOrderId { get; set; }
