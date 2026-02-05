@@ -56,7 +56,7 @@ public class BinanceSandboxStateTests
         var finalBtc = finalBalances.First(b => b.Asset == "BTC").Free;
 
         finalUsd.Should().BeLessThan(initialUsd);
-        finalBtc.Should().BeGreaterThan(10000m); // Initial was 10000
+        finalBtc.Should().BeGreaterThan(10m); // Initial was 10
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class BinanceSandboxStateTests
         var balances = await _sandboxState.GetBalancesAsync();
 
         // Assert
-        balances.Should().Contain(b => b.Asset == "USD" && b.Free == 10000m);
-        balances.Should().Contain(b => b.Asset == "BTC" && b.Free == 10000m);
+        balances.Should().Contain(b => b.Asset == "USD" && b.Free == 100000m);
+        balances.Should().Contain(b => b.Asset == "BTC" && b.Free == 10m);
     }
 }
