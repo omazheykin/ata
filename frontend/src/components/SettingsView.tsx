@@ -283,12 +283,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                         <input
                           type="number"
                           value={state.maxConsecutiveLosses}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10);
                             setState({
                               ...state,
-                              maxConsecutiveLosses: parseInt(e.target.value),
-                            })
-                          }
+                              maxConsecutiveLosses: Number.isNaN(value)
+                                ? state.maxConsecutiveLosses
+                                : value,
+                            });
+                          }}
                           className="bg-transparent text-sm font-bold text-blue-400 w-full outline-none"
                         />
                         <span className="text-gray-500 font-bold text-[10px] uppercase whitespace-nowrap">
