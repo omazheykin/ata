@@ -61,7 +61,7 @@ public class TradeServiceTests
         _rebalancingServiceMock.Setup(x => x.GetSkew(It.IsAny<string>())).Returns(0m);
 
         // Pass nulls to base constructor of StatsService as we mock the method we need
-        _statsServiceMock = new Mock<ArbitrageStatsService>(null!, null!, null!, null!);
+        _statsServiceMock = new Mock<ArbitrageStatsService>(null!, null!, null!, null!, null!);
         _statsServiceMock.Setup(x => x.GetStatsAsync()).ReturnsAsync(new StatsResponse());
 
         _tradeService = new TradeService(
