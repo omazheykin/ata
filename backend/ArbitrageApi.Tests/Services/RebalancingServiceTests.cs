@@ -100,7 +100,6 @@ public class RebalancingServiceTests
         await (Task)method!.Invoke(_rebalancingService, new object[] { CancellationToken.None })!;
 
         // Assert
-        // Assert
         _rebalancingService.GetSkew("BTC").Should().Be(0.5m);
     }
     
