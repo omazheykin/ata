@@ -16,17 +16,17 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         _realState = realState;
         
         // Initialize with default funds
-        _balances["USD"] = 10000m;
-        _balances["BTC"] = 10000m;
-        _balances["ETH"] = 10000m;
-        _balances["BNB"] = 10000m;
-        _balances["SOL"] = 10000m;
+        _balances["USD"] = 100000m;
+        _balances["BTC"] = 10m; // 10 BTC is plenty
+        _balances["ETH"] = 100m;
+        _balances["BNB"] = 1000m;
+        _balances["SOL"] = 1000m;
         _balances["XRP"] = 10000m;
         _balances["ADA"] = 10000m;
-        _balances["AVAX"] = 10000m;
-        _balances["DOT"] = 10000m;
+        _balances["AVAX"] = 1000m;
+        _balances["DOT"] = 1000m;
         _balances["MATIC"] = 10000m;
-        _balances["LINK"] = 10000m;
+        _balances["LINK"] = 1000m;
     }
 
     public override Task<ExchangePrice?> GetPriceAsync(string symbol)
@@ -56,6 +56,13 @@ public class CoinbaseSandboxState : CoinbaseBaseState
     {
         Logger.LogInformation("🧪 [Sandbox] Mock Coinbase Withdrawal of {Amount} {Asset} to {Address}", amount, asset, address);
         return Task.FromResult($"mock_cb_tx_{Guid.NewGuid()}");
+    }
+
+    public override System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        var mockAddr = $"SANDBOX_COINBASE_{asset.ToUpper()}";
+        Logger.LogInformation("🧪 [Sandbox] Mock Coinbase Deposit Address for {Asset}: {Address}", asset, mockAddr);
+        return Task.FromResult<string?>(mockAddr);
     }
 
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)

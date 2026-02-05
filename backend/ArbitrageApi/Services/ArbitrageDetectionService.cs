@@ -237,9 +237,23 @@ public class ArbitrageDetectionService : BackgroundService
             
             await _hubContext.Clients.All.SendAsync("ReceiveOpportunity", opportunity, stoppingToken);
             
-            if (opportunity.ProfitPercentage >= _currentMinProfitThreshold)
+            // Determine effective threshold for this pair
+            var effectiveThreshold = _currentMinProfitThreshold;
+            var state = _persistenceService.GetState();
+            if (state.PairThresholds.TryGetValue(symbol, out var pairLimit))
+            {
+                effectiveThreshold = pairLimit;
+            }
+
+            // Forward to Trade Service if profitable (TradeService will apply smart filtering/rebalancing logic)
+            if (opportunity.ProfitPercentage >= effectiveThreshold)
             {
                 await _channelProvider.TradeChannel.Writer.WriteAsync(opportunity, stoppingToken);
+            }
+            else if (opportunity.ProfitPercentage >= 0.01m)
+            {
+                // Low profit, but potentially useful for rebalancing
+                await _channelProvider.PassiveRebalanceChannel.Writer.WriteAsync(opportunity, stoppingToken);
             }
         }
     }
@@ -380,6 +394,31 @@ public class ArbitrageDetectionService : BackgroundService
         state.MinRebalanceSkewThreshold = threshold;
         _persistenceService.SaveState(state);
         await _hubContext.Clients.All.SendAsync("ReceiveRebalanceThresholdUpdate", threshold);
+    }
+
+    public async Task SetWalletOverride(string asset, string exchange, string address)
+    {
+        _logger.LogInformation("🛡️ Updating Wallet Override: {Asset} on {Exchange} -> {Address}", asset, exchange, address);
+        var state = _persistenceService.GetState();
+        
+        if (!state.WalletOverrides.ContainsKey(asset))
+        {
+            state.WalletOverrides[asset] = new Dictionary<string, string>();
+        }
+        
+        state.WalletOverrides[asset][exchange] = address;
+        _persistenceService.SaveState(state);
+        
+        await _hubContext.Clients.All.SendAsync("ReceiveWalletOverridesUpdate", state.WalletOverrides);
+    }
+
+    public async Task SetWalletOverrides(Dictionary<string, Dictionary<string, string>> overrides)
+    {
+        _logger.LogInformation("🛡️ Updating bulk Wallet Overrides: {Count} assets", overrides.Count);
+        var state = _persistenceService.GetState();
+        state.WalletOverrides = overrides;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveWalletOverridesUpdate", overrides);
     }
 
     private async Task PeriodicallyBroadcastStatusAsync(CancellationToken stoppingToken)

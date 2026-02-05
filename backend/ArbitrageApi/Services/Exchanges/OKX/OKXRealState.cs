@@ -191,6 +191,33 @@ public class OKXRealState : OKXBaseState
         }
     }
 
+    public override async Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        try
+        {
+            var path = $"/api/v5/asset/deposit-address?ccy={asset.ToUpper()}";
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}{path}");
+            AddOKXHeaders(request, timestamp, "GET", path, "");
+
+            var response = await HttpClient.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.GetArrayLength() > 0)
+            {
+                return data[0].TryGetProperty("addr", out var addr) ? addr.GetString() : null;
+            }
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error fetching OKX deposit address for {Asset}", asset);
+            return null;
+        }
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         // No-op for real state

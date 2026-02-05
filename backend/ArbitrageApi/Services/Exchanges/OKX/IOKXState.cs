@@ -9,5 +9,6 @@ public interface IOKXState
     Task<List<Models.Balance>> GetBalancesAsync();
     Task<decimal?> GetWithdrawalFeeAsync(string asset);
     Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+    Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
     Task DepositSandboxFundsAsync(string asset, decimal amount);
 }

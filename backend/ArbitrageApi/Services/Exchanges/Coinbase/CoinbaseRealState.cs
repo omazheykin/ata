@@ -152,6 +152,34 @@ public class CoinbaseRealState : CoinbaseBaseState
         throw new NotImplementedException("Real order cancellation for Coinbase is not yet implemented.");
     }
 
+    public override async System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        try
+        {
+            Logger.LogInformation("Resolving deposit address for Coinbase {Asset}", asset);
+            var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+            
+            // 1. Get all accounts to find the UUID for this asset
+            var accountResponse = await cats.GetAccountsAsync();
+            var account = accountResponse?.Accounts?.FirstOrDefault(a => 
+                string.Equals(a.Currency, asset, StringComparison.OrdinalIgnoreCase));
+
+            if (account == null || string.IsNullOrEmpty(account.Uuid))
+            {
+                Logger.LogWarning("Could not find Coinbase account UUID for {Asset}", asset);
+                return null;
+            }
+
+            // 2. Fetch/Create deposit address for this account
+            return await cats.GetDepositAddressAsync(account.Uuid);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error fetching deposit address from Coinbase for {Asset}", asset);
+            return null;
+        }
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         // No-op for real state

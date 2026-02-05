@@ -103,4 +103,18 @@ public class SettingsController : ControllerBase
         await _detectionService.SetRebalanceThreshold(threshold);
         return Ok(new { Threshold = threshold });
     }
+
+    [HttpPost("wallet-override")]
+    public async Task<ActionResult> SetWalletOverride([FromQuery] string asset, [FromQuery] string exchange, [FromQuery] string address)
+    {
+        await _detectionService.SetWalletOverride(asset, exchange, address);
+        return Ok(new { Asset = asset, Exchange = exchange, Address = address });
+    }
+
+    [HttpPost("wallet-overrides")]
+    public async Task<ActionResult> SetWalletOverrides([FromBody] Dictionary<string, Dictionary<string, string>> overrides)
+    {
+        await _detectionService.SetWalletOverrides(overrides);
+        return Ok(overrides);
+    }
 }

@@ -1,4 +1,5 @@
 using ArbitrageApi.Models;
+using System.Threading;
 
 namespace ArbitrageApi.Services.Exchanges;
 
@@ -13,6 +14,7 @@ public interface IExchangeClient
     Task<List<Balance>> GetBalancesAsync();
     Task<decimal?> GetWithdrawalFeeAsync(string asset);
     Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+    System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
     void SetSandboxMode(bool enabled);
 
     /// <summary>

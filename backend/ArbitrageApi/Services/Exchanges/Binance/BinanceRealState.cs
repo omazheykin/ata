@@ -91,6 +91,35 @@ public class BinanceRealState : BinanceBaseState
         }
     }
 
+    public override async System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        try
+        {
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var query = $"coin={asset.ToUpper()}&timestamp={timestamp}";
+            var signature = Sign(query);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/sapi/v1/capital/deposit/address?{query}&signature={signature}");
+            request.Headers.Add("X-MBX-APIKEY", ApiKey);
+
+            var response = await HttpClient.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(ct);
+                Logger.LogError("Failed to fetch deposit address from Binance for {Asset}: {StatusCode} - {Error}", asset, response.StatusCode, error);
+                return null;
+            }
+
+            var addressInfo = await response.Content.ReadFromJsonAsync<BinanceDepositAddressResponse>(ct);
+            return addressInfo?.Address;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error fetching deposit address from Binance for {Asset}", asset);
+            return null;
+        }
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         // No-op for real state

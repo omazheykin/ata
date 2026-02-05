@@ -103,5 +103,7 @@ public abstract class OKXBaseState : IOKXState
 
     public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
     
+    public abstract Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
+
     public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
 }

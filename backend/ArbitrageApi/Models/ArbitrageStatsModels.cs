@@ -46,6 +46,7 @@ public class HourDetail
 public class RebalancingInfo
 {
     public Dictionary<string, decimal> AssetSkews { get; set; } = new(); // Legacy support
+    public Dictionary<string, Dictionary<string, decimal>> AssetDeviations { get; set; } = new(); // N-Exchange Support
     public string Recommendation { get; set; } = string.Empty;
     public decimal EfficiencyScore { get; set; }
     

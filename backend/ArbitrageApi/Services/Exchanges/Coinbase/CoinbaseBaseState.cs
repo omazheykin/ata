@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading;
 using ArbitrageApi.Models;
 using ArbitrageApi.Services.Exchanges.Coinbase;
 
@@ -205,6 +206,8 @@ public abstract class CoinbaseBaseState : IExchangeState
     // Order management methods - to be implemented by derived classes
     public abstract Task<OrderInfo> GetOrderStatusAsync(string orderId);
     public abstract Task<bool> CancelOrderAsync(string orderId);
+
+    public abstract System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
 
     // Sandbox management
     public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
