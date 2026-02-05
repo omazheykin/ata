@@ -71,6 +71,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
     setNewPair("");
   };
 
+  const handleResetSafety = async () => {
+    if (!state) return;
+    try {
+      await apiService.resetSafetyKillSwitch();
+      setState({
+        ...state,
+        isSafetyKillSwitchTriggered: false,
+        globalKillSwitchReason: "",
+      });
+    } catch (error) {
+      console.error("Error resetting safety switch:", error);
+    }
+  };
+
   const handleSave = async () => {
     if (!state) return;
     try {
@@ -79,6 +93,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
       await apiService.setSafeMultiplier(state.safeBalanceMultiplier);
       await apiService.setUseTakerFees(state.useTakerFees);
       await apiService.toggleAutoRebalance(state.isAutoRebalanceEnabled);
+      await apiService.setSafetyLimits(
+        state.maxDrawdownUsd,
+        state.maxConsecutiveLosses,
+      );
       onClose();
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -201,6 +219,83 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                         {state.useTakerFees
                           ? "Uses market order fees (Safer)"
                           : "Uses limit order fees (Riskier)"}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Phase 4: Safety & Kill-Switches */}
+                <section>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">
+                    Safety Kill-Switches
+                  </h3>
+                  {state.isSafetyKillSwitchTriggered && (
+                    <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl animate-pulse">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-black text-red-400 uppercase">
+                            🚨 System Paused by Robot Friend
+                          </p>
+                          <p className="text-xs text-red-300 italic mt-1">
+                            {state.globalKillSwitchReason}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleResetSafety}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-[10px] font-black uppercase rounded-lg transition-all shadow-lg shadow-red-500/20"
+                        >
+                          Reset Safety Switch
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Max 24h Drawdown (USD)
+                      </label>
+                      <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                        <span className="text-gray-500 font-bold">$</span>
+                        <input
+                          type="number"
+                          value={state.maxDrawdownUsd}
+                          onChange={(e) =>
+                            setState({
+                              ...state,
+                              maxDrawdownUsd: parseFloat(e.target.value),
+                            })
+                          }
+                          className="bg-transparent text-sm font-bold text-blue-400 w-full outline-none"
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Pauses trading if realized loss exceeds this amount.
+                      </p>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">
+                        Consecutive Loss Trigger
+                      </label>
+                      <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                        <input
+                          type="number"
+                          value={state.maxConsecutiveLosses}
+                          onChange={(e) =>
+                            setState({
+                              ...state,
+                              maxConsecutiveLosses: parseInt(e.target.value),
+                            })
+                          }
+                          className="bg-transparent text-sm font-bold text-blue-400 w-full outline-none"
+                        />
+                        <span className="text-gray-500 font-bold text-[10px] uppercase whitespace-nowrap">
+                          Trades
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-2 italic">
+                        Pauses trading if X trades fail in a row.
                       </p>
                     </div>
                   </div>

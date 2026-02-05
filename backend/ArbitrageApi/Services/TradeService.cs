@@ -78,6 +78,13 @@ public class TradeService : BackgroundService
                 _logger.LogInformation("💰 Trade Service: Signal received for {Symbol} ({Profit}%). Checking filters...", opportunity.Symbol, opportunity.ProfitPercentage);
                 try
                 {
+                    var state = _persistenceService.GetState();
+                    if (state.IsSafetyKillSwitchTriggered)
+                    {
+                        _logger.LogWarning("🛡️ Trade blocked by SAFETY KILL-SWITCH. Reason: {Reason}", state.GlobalKillSwitchReason);
+                        continue;
+                    }
+
                     if (!_isAutoTradeEnabled)
                     {
                         _logger.LogDebug("Auto-Trade is disabled, skipping opportunity for {Symbol}", opportunity.Symbol);

@@ -17,6 +17,12 @@ public class AppState
         { "ETHUSDT", 0.05m },
         { "SOLUSDT", 0.15m }
     };
+
+    // Phase 4: Safety Kill-Switches
+    public decimal MaxDrawdownUsd { get; set; } = 50.0m; // Stop if lost $50
+    public int MaxConsecutiveLosses { get; set; } = 3;   // Stop if 3 fails in a row
+    public bool IsSafetyKillSwitchTriggered { get; set; } = false;
+    public string GlobalKillSwitchReason { get; set; } = string.Empty;
 }
 
 public class StatePersistenceService

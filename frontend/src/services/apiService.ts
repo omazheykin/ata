@@ -127,6 +127,16 @@ export const apiService = {
         return response.data;
     },
 
+    async resetSafetyKillSwitch(): Promise<{ success: boolean }> {
+        const response = await apiClient.post<{ success: boolean }>('/settings/safety-reset');
+        return response.data;
+    },
+
+    async setSafetyLimits(drawdown: number, losses: number): Promise<{ drawdown: number, losses: number }> {
+        const response = await apiClient.post<{ drawdown: number, losses: number }>(`/settings/safety-limits?drawdown=${drawdown}&losses=${losses}`);
+        return response.data;
+    },
+
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {
             exchange,

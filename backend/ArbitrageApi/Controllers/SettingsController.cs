@@ -82,4 +82,18 @@ public class SettingsController : ControllerBase
         await _detectionService.SetAutoRebalance(enabled);
         return Ok(new { Enabled = enabled });
     }
+
+    [HttpPost("safety-reset")]
+    public async Task<ActionResult> ResetSafetyKillSwitch()
+    {
+        await _detectionService.ResetSafetyKillSwitch();
+        return Ok(new { Success = true });
+    }
+
+    [HttpPost("safety-limits")]
+    public async Task<ActionResult> SetSafetyLimits([FromQuery] decimal drawdown, [FromQuery] int losses)
+    {
+        await _detectionService.SetSafetyLimits(drawdown, losses);
+        return Ok(new { Drawdown = drawdown, Losses = losses });
+    }
 }

@@ -132,6 +132,9 @@ builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.SummaryProc
 builder.Services.AddSingleton<ArbitrageDetectionService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ArbitrageDetectionService>());
 
+builder.Services.AddSingleton<SafetyMonitoringService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<SafetyMonitoringService>());
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline

@@ -163,4 +163,8 @@ export interface AppState {
     safeBalanceMultiplier: number;
     useTakerFees: boolean;
     pairThresholds: Record<string, number>;
+    maxDrawdownUsd: number;
+    maxConsecutiveLosses: number;
+    isSafetyKillSwitchTriggered: boolean;
+    globalKillSwitchReason: string;
 }
