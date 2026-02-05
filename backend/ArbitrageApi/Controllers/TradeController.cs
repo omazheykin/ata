@@ -11,12 +11,14 @@ namespace ArbitrageApi.Controllers;
 public class TradeController : ControllerBase
 {
     private readonly TradeService _tradeService;
+    private readonly OrderExecutionService _executionService;
     private readonly IHubContext<ArbitrageHub> _hubContext;
     private readonly ILogger<TradeController> _logger;
 
-    public TradeController(TradeService tradeService, IHubContext<ArbitrageHub> hubContext, ILogger<TradeController> logger)
+    public TradeController(TradeService tradeService, OrderExecutionService executionService, IHubContext<ArbitrageHub> hubContext, ILogger<TradeController> logger)
     {
         _tradeService = tradeService;
+        _executionService = executionService;
         _hubContext = hubContext;
         _logger = logger;
     }
@@ -24,7 +26,7 @@ public class TradeController : ControllerBase
     [HttpGet("transactions")]
     public ActionResult<List<Transaction>> GetTransactions()
     {
-        return Ok(_tradeService.GetRecentTransactions());
+        return Ok(_executionService.GetRecentTransactions());
     }
 
     [HttpPost("autotrade")]
@@ -54,24 +56,25 @@ public class TradeController : ControllerBase
     [HttpGet("strategy")]
     public ActionResult GetStrategy()
     {
-        return Ok(new { Strategy = _tradeService.Strategy.ToString() });
+        return Ok(new { Strategy = _executionService.GetExecutionStrategy().ToString() });
     }
 
     [HttpPost("strategy")]
     public ActionResult SetStrategy([FromQuery] ExecutionStrategy strategy)
     {
-        _tradeService.SetExecutionStrategy(strategy);
+        _executionService.SetExecutionStrategy(strategy);
         return Ok(new { Strategy = strategy.ToString() });
     }
 
     [HttpPost("execute")]
     public async Task<ActionResult> ExecuteTrade([FromBody] ArbitrageOpportunity opportunity)
     {
-        var success = await _tradeService.ExecuteTradeAsync(opportunity);
+        // Manual execution ignores thresholds (pass 0 or 0.01)
+        var success = await _executionService.ExecuteTradeAsync(opportunity, 0m);
         if (success)
         {
             // Notify clients about the new transaction
-            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _tradeService.GetRecentTransactions().First());
+            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", _executionService.GetRecentTransactions().First());
         }
         return Ok(new { Success = success });
     }

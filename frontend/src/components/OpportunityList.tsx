@@ -91,9 +91,9 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
     if (userLimit < opp.volume) {
       isLimited = true;
       if (maxBuyVol < maxSellVol) {
-        limitingFactor = `Need ${quoteAsset} on ${opp.buyExchange}`;
+        limitingFactor = `Limited by ${quoteAsset} on ${opp.buyExchange}`;
       } else {
-        limitingFactor = `Need ${opp.asset} on ${opp.sellExchange}`;
+        limitingFactor = `Limited by ${opp.asset} on ${opp.sellExchange}`;
       }
     }
 
@@ -179,8 +179,14 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
           </thead>
           <tbody className="divide-y divide-white/5">
             {filteredOpportunities.map((opp) => {
-              const { executableVol, isLimited, limitingFactor } =
-                getWalletCapacity(opp);
+              const {
+                executableVol,
+                isLimited,
+                limitingFactor,
+                quoteAsset,
+                quoteBalance,
+                baseBalance,
+              } = getWalletCapacity(opp);
               const potentialProfit =
                 executableVol * opp.buyPrice * (opp.profitPercentage / 100);
 
@@ -242,7 +248,14 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                         </span>
                       </div>
                       <span
-                        className={`text-[9px] font-mono whitespace-nowrap ${isLimited ? "text-amber-400/80" : "text-blue-400/60"}`}
+                        className={`text-[9px] font-mono whitespace-nowrap cursor-help ${isLimited ? "text-amber-400/80 dashed-underline" : "text-blue-400/60"}`}
+                        title={
+                          isLimited
+                            ? limitingFactor.includes(quoteAsset)
+                              ? `The calculated opportunity required ${(opp.volume * opp.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${quoteAsset}, you have ${quoteBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${quoteAsset}`
+                              : `The calculated opportunity required ${opp.volume.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${opp.asset}, you have ${baseBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${opp.asset}`
+                            : ""
+                        }
                       >
                         {isLimited
                           ? limitingFactor

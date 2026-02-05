@@ -13,17 +13,18 @@ public class BinanceSandboxState : BinanceBaseState
         _realState = realState;
 
         // Initialize with default funds
-        _balances["USD"] = 10000m;
-        _balances["BTC"] = 10000m;
-        _balances["ETH"] = 10000m;
-        _balances["BNB"] = 10000m;
-        _balances["SOL"] = 10000m;
+        _balances["USD"] = 100000m;    // Backend Logic uses this
+        _balances["USDT"] = 100000m;   // Frontend Logic (QuoteAsset) likely looks for this
+        _balances["BTC"] = 10m;
+        _balances["ETH"] = 100m;
+        _balances["BNB"] = 1000m;
+        _balances["SOL"] = 1000m;
         _balances["XRP"] = 10000m;
         _balances["ADA"] = 10000m;
-        _balances["AVAX"] = 10000m;
-        _balances["DOT"] = 10000m;
+        _balances["AVAX"] = 1000m;
+        _balances["DOT"] = 1000m;
         _balances["MATIC"] = 10000m;
-        _balances["LINK"] = 10000m;
+        _balances["LINK"] = 1000m;
     }
 
     public override Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
@@ -46,6 +47,13 @@ public class BinanceSandboxState : BinanceBaseState
     {
         Logger.LogInformation("🧪 [Sandbox] Mock Withdrawal of {Amount} {Asset} to {Address} (Network: {Network})", amount, asset, address, network ?? "Default");
         return Task.FromResult($"mock_tx_{Guid.NewGuid()}");
+    }
+
+    public override System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        var mockAddr = $"SANDBOX_BINANCE_{asset.ToUpper()}";
+        Logger.LogInformation("🧪 [Sandbox] Mock Deposit Address for {Asset}: {Address}", asset, mockAddr);
+        return Task.FromResult<string?>(mockAddr);
     }
 
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)

@@ -14,6 +14,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
   const [newPair, setNewPair] = useState("");
   const [newThreshold, setNewThreshold] = useState("0.1");
 
+  // Wallet Management State
+  const [newWalletAsset, setNewWalletAsset] = useState("");
+  const [newWalletExchange, setNewWalletExchange] = useState("Binance");
+  const [newWalletAddress, setNewWalletAddress] = useState("");
+
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
@@ -71,6 +76,48 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
     setNewPair("");
   };
 
+  const handleAddWallet = () => {
+    if (!state || !newWalletAsset || !newWalletAddress) return;
+
+    const asset = newWalletAsset.toUpperCase();
+    const currentOverrides = { ...state.walletOverrides };
+
+    if (!currentOverrides[asset]) {
+      currentOverrides[asset] = {};
+    }
+
+    currentOverrides[asset][newWalletExchange] = newWalletAddress;
+
+    setState({
+      ...state,
+      walletOverrides: currentOverrides,
+    });
+
+    setNewWalletAsset("");
+    setNewWalletAddress("");
+  };
+
+  const handleRemoveWallet = (asset: string, exchange: string) => {
+    if (!state) return;
+
+    const currentOverrides = { ...state.walletOverrides };
+    if (currentOverrides[asset]) {
+      const exchangeOverrides = { ...currentOverrides[asset] };
+      delete exchangeOverrides[exchange];
+
+      if (Object.keys(exchangeOverrides).length === 0) {
+        delete currentOverrides[asset];
+      } else {
+        currentOverrides[asset] = exchangeOverrides;
+      }
+
+      setState({
+        ...state,
+        walletOverrides: currentOverrides,
+      });
+    }
+  };
+
   const handleResetSafety = async () => {
     if (!state) return;
     try {
@@ -98,6 +145,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
         state.maxConsecutiveLosses,
       );
       await apiService.setRebalanceThreshold(state.minRebalanceSkewThreshold);
+      await apiService.setWalletOverrides(state.walletOverrides);
       onClose();
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -383,6 +431,116 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                       </div>
                       <div className="w-12 h-6 rounded-full bg-white/5 relative">
                         <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white/20" />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Manual Wallet Overrides */}
+                <section>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest">
+                      Manual Wallet Overrides
+                    </h3>
+                    <span className="text-[10px] text-gray-500 uppercase">
+                      Resolved before API fetching
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {Object.entries(state.walletOverrides).map(
+                      ([asset, exchanges]) => (
+                        <div key={asset} className="space-y-2">
+                          {Object.entries(exchanges).map(
+                            ([exchange, address]) => (
+                              <div
+                                key={`${asset}-${exchange}`}
+                                className="glass p-3 rounded-xl border border-white/5 flex items-center justify-between group"
+                              >
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-[10px] font-black text-blue-400 uppercase shrink-0">
+                                    {asset}
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-[10px] font-black text-gray-500 uppercase">
+                                      {exchange}
+                                    </span>
+                                    <span className="text-xs font-bold text-gray-300 truncate">
+                                      {address}
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() =>
+                                    handleRemoveWallet(asset, exchange)
+                                  }
+                                  className="p-1.5 text-gray-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      ),
+                    )}
+
+                    {/* Add New Wallet Override */}
+                    <div className="pt-4 mt-4 border-t border-white/5">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="ETH"
+                            value={newWalletAsset}
+                            onChange={(e) =>
+                              setNewWalletAsset(e.target.value.toUpperCase())
+                            }
+                            className="w-20 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-gray-600 outline-none focus:border-blue-500/50 transition-all font-bold"
+                          />
+                          <select
+                            value={newWalletExchange}
+                            onChange={(e) =>
+                              setNewWalletExchange(e.target.value)
+                            }
+                            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 transition-all font-bold appearance-none cursor-pointer"
+                          >
+                            <option value="Binance" className="bg-[#1a1c24]">
+                              Binance
+                            </option>
+                            <option value="Coinbase" className="bg-[#1a1c24]">
+                              Coinbase
+                            </option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="0x..."
+                            value={newWalletAddress}
+                            onChange={(e) =>
+                              setNewWalletAddress(e.target.value)
+                            }
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder:text-gray-600 outline-none focus:border-blue-500/50 transition-all font-bold"
+                          />
+                        </div>
+                        <button
+                          onClick={handleAddWallet}
+                          disabled={!newWalletAsset || !newWalletAddress}
+                          className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:hover:bg-blue-500 text-white py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg shadow-blue-500/20 uppercase"
+                        >
+                          Add Wallet Override
+                        </button>
                       </div>
                     </div>
                   </div>

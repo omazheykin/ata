@@ -2,15 +2,19 @@ using System.Collections.Concurrent;
 using ArbitrageApi.Models;
 using ArbitrageApi.Services.Exchanges;
 
+using Microsoft.AspNetCore.SignalR;
+using ArbitrageApi.Hubs;
+
 namespace ArbitrageApi.Services;
 
-public class RebalancingService : BackgroundService
+public class RebalancingService : BackgroundService, IRebalancingService
 {
     private readonly ILogger<RebalancingService> _logger;
     private readonly List<IExchangeClient> _exchangeClients;
     private readonly ITrendAnalysisService _trendService;
     private readonly ChannelProvider _channelProvider;
     private readonly StatePersistenceService _persistenceService;
+    private readonly IHubContext<ArbitrageHub> _hubContext;
     private readonly ConcurrentDictionary<string, decimal> _assetSkews = new(); // -1.0 (heavy Coinbase) to 1.0 (heavy Binance)
     private readonly ConcurrentDictionary<string, Dictionary<string, decimal>> _exchangeBalances = new();
     private List<RebalancingProposal> _currentProposals = new();
@@ -21,13 +25,15 @@ public class RebalancingService : BackgroundService
         IEnumerable<IExchangeClient> exchangeClients,
         ITrendAnalysisService trendService,
         ChannelProvider channelProvider,
-        StatePersistenceService persistenceService)
+        StatePersistenceService persistenceService,
+        IHubContext<ArbitrageHub> hubContext)
     {
         _logger = logger;
         _exchangeClients = exchangeClients.ToList();
         _trendService = trendService;
         _channelProvider = channelProvider;
         _persistenceService = persistenceService;
+        _hubContext = hubContext;
     }
 
     public ITrendAnalysisService GetTrendAnalysisService() => _trendService;
@@ -190,5 +196,80 @@ public class RebalancingService : BackgroundService
         }
 
         return proposal;
+    }
+
+    public async Task<bool> ExecuteRebalanceAsync(RebalancingProposal proposal, CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("⚖️ [AUTO-REBALANCE] Initiating transfer for {Asset}: {Amount} {Direction}", 
+                proposal.Asset, proposal.Amount, proposal.Direction);
+
+            var sourceName = proposal.Direction.Split(' ')[0];
+            var targetName = proposal.Direction.Split(' ')[2];
+            
+            var sourceClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == sourceName);
+            var targetClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == targetName);
+
+            if (sourceClient == null || targetClient == null)
+            {
+                _logger.LogError("Missing exchange client for rebalance: {Source} or {Target}", sourceName, targetName);
+                return false;
+            }
+
+            // Wallet Address Resolution (Phase 7)
+            // 1. Check for manual override in settings
+            var state = _persistenceService.GetState();
+            string? depositAddress = null;
+            
+            if (state.WalletOverrides.TryGetValue(proposal.Asset, out var assetOverrides) &&
+                assetOverrides.TryGetValue(targetName, out var manualAddress))
+            {
+                _logger.LogInformation("🛡️ [AUTO-REBALANCE] Using manual wallet override for {Asset} on {Target}: {Address}", 
+                    proposal.Asset, targetName, manualAddress);
+                depositAddress = manualAddress;
+            }
+            
+            // 2. Fallback to automated fetching from the TARGET exchange
+            if (string.IsNullOrWhiteSpace(depositAddress))
+            {
+                _logger.LogInformation("🔄 [AUTO-REBALANCE] No manual override found. Fetching deposit address from {Target} API...", targetName);
+                depositAddress = await targetClient.GetDepositAddressAsync(proposal.Asset, ct);
+            }
+
+            if (string.IsNullOrWhiteSpace(depositAddress))
+            {
+                _logger.LogError("❌ [AUTO-REBALANCE] Could not resolve deposit address for {Asset} on {Target}. Manual override required.", 
+                    proposal.Asset, targetName);
+                return false;
+            }
+
+            var txId = await sourceClient.WithdrawAsync(proposal.Asset, proposal.Amount, depositAddress);
+            
+            _logger.LogInformation("✅ [AUTO-REBALANCE] Transfer submitted! TxId: {TxId}", txId);
+            
+            // Record a special transaction for history
+            var transaction = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTime.UtcNow,
+                Type = "Rebalance",
+                Asset = proposal.Asset,
+                Amount = proposal.Amount,
+                Exchange = proposal.Direction,
+                Status = "Success",
+                BuyOrderId = txId // Store TxId here for lack of better field
+            };
+            
+            _channelProvider.TransactionChannel.Writer.TryWrite(transaction);
+            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", transaction, ct);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute auto-rebalance for {Asset}", proposal.Asset);
+            return false;
+        }
     }
 }

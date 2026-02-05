@@ -26,6 +26,10 @@ public class AppState
 
     // PR Feedback Updates
     public decimal MinRebalanceSkewThreshold { get; set; } = 0.1m; // 10% default
+
+    // Phase 7: Wallet Address Management
+    // Mapping: Asset -> ExchangeName -> Address
+    public Dictionary<string, Dictionary<string, string>> WalletOverrides { get; set; } = new();
 }
 
 public class StatePersistenceService

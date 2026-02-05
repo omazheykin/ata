@@ -453,6 +453,77 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
 
          return balances;
       }
+
+      /// <summary>
+      /// Gets a deposit address for a specific account UUID
+      /// Uses Coinbase V2 API (authenticated with same credentials)
+      /// </summary>
+      public async Task<string?> GetDepositAddressAsync(string accountUuid)
+      {
+         var requestPath = $"/v2/accounts/{accountUuid}/addresses";
+         var method = "POST"; // POST creates one if it doesn't exist, which is safer than GET
+
+         try
+         {
+            var jwt = GenerateJwt(method, requestPath);
+
+            using (var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}{requestPath}"))
+            {
+               request.Headers.Add("Authorization", $"Bearer {jwt}");
+
+               using (var response = await _httpClient.SendAsync(request))
+               {
+                  var content = await response.Content.ReadAsStringAsync();
+
+                  if (!response.IsSuccessStatusCode)
+                  {
+                     // Fallback to GET if POST is restricted but GET isn't
+                     _logger.LogWarning("POST to /addresses failed ({StatusCode}), trying GET...", response.StatusCode);
+                     return await GetLastDepositAddressAsync(accountUuid);
+                  }
+
+                  using var doc = JsonDocument.Parse(content);
+                  if (doc.RootElement.TryGetProperty("data", out var data) && data.TryGetProperty("address", out var addr))
+                  {
+                     return addr.GetString();
+                  }
+                  
+                  return null;
+               }
+            }
+         }
+         catch (Exception ex)
+         {
+            _logger.LogError(ex, "Error getting deposit address for account {Uuid}", accountUuid);
+            return null;
+         }
+      }
+
+      private async Task<string?> GetLastDepositAddressAsync(string accountUuid)
+      {
+         var requestPath = $"/v2/accounts/{accountUuid}/addresses";
+         var method = "GET";
+
+         var jwt = GenerateJwt(method, requestPath);
+
+         using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{requestPath}"))
+         {
+            request.Headers.Add("Authorization", $"Bearer {jwt}");
+
+            using (var response = await _httpClient.SendAsync(request))
+            {
+               var content = await response.Content.ReadAsStringAsync();
+               if (!response.IsSuccessStatusCode) return null;
+
+               using var doc = JsonDocument.Parse(content);
+               if (doc.RootElement.TryGetProperty("data", out var dataList) && dataList.GetArrayLength() > 0)
+               {
+                  return dataList[0].GetProperty("address").GetString();
+               }
+               return null;
+            }
+         }
+      }
    }
 
 }

@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading;
 using ArbitrageApi.Models;
 
 namespace ArbitrageApi.Services.Exchanges;
@@ -455,7 +456,21 @@ public abstract class BinanceBaseState : IExchangeState
         [JsonPropertyName("time")]
         public long Time { get; set; }
     }
+
+    protected class BinanceDepositAddressResponse
+    {
+        [JsonPropertyName("address")]
+        public string Address { get; set; } = string.Empty;
+        
+        [JsonPropertyName("coin")]
+        public string Coin { get; set; } = string.Empty;
+        
+        [JsonPropertyName("tag")]
+        public string Tag { get; set; } = string.Empty;
+    }
     
+    public abstract System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
+
     // Sandbox management
     public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
 }

@@ -21,17 +21,17 @@ public class OKXSandboxState : OKXBaseState
         _realState = realState;
         
         // Initialize with default funds
-        _balances["USDT"] = 10000m;
-        _balances["BTC"] = 10000m;
-        _balances["ETH"] = 10000m;
-        _balances["BNB"] = 10000m;
-        _balances["SOL"] = 10000m;
+        _balances["USDT"] = 100000m;
+        _balances["BTC"] = 10m;
+        _balances["ETH"] = 100m;
+        _balances["BNB"] = 1000m;
+        _balances["SOL"] = 1000m;
         _balances["XRP"] = 10000m;
         _balances["ADA"] = 10000m;
-        _balances["AVAX"] = 10000m;
-        _balances["DOT"] = 10000m;
+        _balances["AVAX"] = 1000m;
+        _balances["DOT"] = 1000m;
         _balances["MATIC"] = 10000m;
-        _balances["LINK"] = 10000m;
+        _balances["LINK"] = 1000m;
     }
 
     public override Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync()
@@ -67,6 +67,13 @@ public class OKXSandboxState : OKXBaseState
     {
         Logger.LogInformation("🧪 [Sandbox] Mock OKX Withdrawal of {Amount} {Asset} to {Address}", amount, asset, address);
         return Task.FromResult($"mock_okx_tx_{Guid.NewGuid()}");
+    }
+
+    public override Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)
+    {
+        var mockAddr = $"SANDBOX_OKX_{asset.ToUpper()}";
+        Logger.LogInformation("🧪 [Sandbox] Mock OKX Deposit Address for {Asset}: {Address}", asset, mockAddr);
+        return Task.FromResult<string?>(mockAddr);
     }
 
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)

@@ -1,3 +1,5 @@
+using ArbitrageApi.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using ArbitrageApi.Models;
 using ArbitrageApi.Services;
 using ArbitrageApi.Services.Exchanges;
@@ -16,6 +18,7 @@ public class RebalancingServiceTests
     private readonly ITrendAnalysisService _trendService;
     private readonly ChannelProvider _channelProvider;
     private readonly Mock<StatePersistenceService> _persistenceServiceMock;
+    private readonly Mock<IHubContext<ArbitrageHub>> _hubContextMock;
     private readonly RebalancingService _rebalancingService;
 
     public RebalancingServiceTests()
@@ -25,6 +28,7 @@ public class RebalancingServiceTests
         _coinbaseClientMock = new Mock<IExchangeClient>();
         _trendService = new ManualTrendService();
         _channelProvider = new ChannelProvider();
+        _hubContextMock = new Mock<IHubContext<ArbitrageHub>>();
 
         _binanceClientMock.Setup(c => c.ExchangeName).Returns("Binance");
         _coinbaseClientMock.Setup(c => c.ExchangeName).Returns("Coinbase");
@@ -33,7 +37,7 @@ public class RebalancingServiceTests
         _persistenceServiceMock.Setup(s => s.GetState()).Returns(new AppState());
 
         var clients = new List<IExchangeClient> { _binanceClientMock.Object, _coinbaseClientMock.Object };
-        _rebalancingService = new RebalancingService(_loggerMock.Object, clients, _trendService, _channelProvider, _persistenceServiceMock.Object);
+        _rebalancingService = new RebalancingService(_loggerMock.Object, clients, _trendService, _channelProvider, _persistenceServiceMock.Object, _hubContextMock.Object);
     }
 
     private class ManualTrendService : ITrendAnalysisService

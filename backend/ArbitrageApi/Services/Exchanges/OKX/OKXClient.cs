@@ -96,6 +96,11 @@ public class OKXClient : IExchangeClient
         return _currentState.WithdrawAsync(asset, amount, address, network);
     }
 
+    public Task<string?> GetDepositAddressAsync(string asset, CancellationToken ct = default)
+    {
+        return _currentState.GetDepositAddressAsync(asset, ct);
+    }
+
     public void SetSandboxMode(bool enabled)
     {
         _isSandbox = enabled;

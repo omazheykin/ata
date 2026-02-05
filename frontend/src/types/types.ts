@@ -168,4 +168,5 @@ export interface AppState {
     isSafetyKillSwitchTriggered: boolean;
     globalKillSwitchReason: string;
     minRebalanceSkewThreshold: number;
+    walletOverrides: Record<string, Record<string, string>>;
 }

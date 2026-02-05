@@ -142,6 +142,16 @@ export const apiService = {
         return response.data;
     },
 
+    async setWalletOverride(asset: string, exchange: string, address: string): Promise<{ asset: string, exchange: string, address: string }> {
+        const response = await apiClient.post<{ asset: string, exchange: string, address: string }>(`/settings/wallet-override?asset=${asset}&exchange=${exchange}&address=${address}`);
+        return response.data;
+    },
+
+    async setWalletOverrides(overrides: Record<string, Record<string, string>>): Promise<Record<string, Record<string, string>>> {
+        const response = await apiClient.post<Record<string, Record<string, string>>>('/settings/wallet-overrides', overrides);
+        return response.data;
+    },
+
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {
             exchange,

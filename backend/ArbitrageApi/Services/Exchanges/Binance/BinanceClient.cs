@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using ArbitrageApi.Models;
 
 namespace ArbitrageApi.Services.Exchanges;
@@ -48,7 +49,8 @@ public class BinanceClient : IExchangeClient
     public Task<List<Balance>> GetBalancesAsync() => _currentState.GetBalancesAsync();
     public Task<decimal?> GetWithdrawalFeeAsync(string asset) => _currentState.GetWithdrawalFeeAsync(asset);
     public Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null) => _currentState.WithdrawAsync(asset, amount, address, network);
-
+    public System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default) => _currentState.GetDepositAddressAsync(asset, ct);
+    
     public List<string> GetSupportedSymbols()
     {
         return TradingPair.CommonPairs.Select(p => p.Symbol).ToList();

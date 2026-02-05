@@ -1,4 +1,5 @@
 using ArbitrageApi.Models;
+using System.Threading;
 
 namespace ArbitrageApi.Services.Exchanges;
 
@@ -11,6 +12,7 @@ public interface IExchangeState
     Task<List<Balance>> GetBalancesAsync();
     Task<decimal?> GetWithdrawalFeeAsync(string asset);
     Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+    System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
     Task UpdateSymbolMappingWithSupportedProductsAsync();
     
     /// <summary>
