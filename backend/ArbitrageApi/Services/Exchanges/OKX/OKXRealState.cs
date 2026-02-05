@@ -130,6 +130,12 @@ public class OKXRealState : OKXBaseState
         }
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        // POST /api/v5/asset/withdrawal (Mock for now)
+        throw new NotImplementedException("OKX real withdrawals not yet enabled for safety.");
+    }
+
     public override async Task<List<Balance>> GetBalancesAsync()
     {
         try

@@ -75,4 +75,11 @@ public class SettingsController : ControllerBase
         await _detectionService.SetUseTakerFees(enabled);
         return Ok(new { Enabled = enabled });
     }
+
+    [HttpPost("auto-rebalance")]
+    public async Task<ActionResult> SetAutoRebalance([FromQuery] bool enabled)
+    {
+        await _detectionService.SetAutoRebalance(enabled);
+        return Ok(new { Enabled = enabled });
+    }
 }

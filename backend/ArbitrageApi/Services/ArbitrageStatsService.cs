@@ -286,6 +286,7 @@ public class ArbitrageStatsService : BackgroundService
         // 7. Rebalancing Info
         var skews = _rebalancingService.GetAllSkews();
         response.Rebalancing.AssetSkews = skews;
+        response.Rebalancing.Proposals = _rebalancingService.GetProposals();
         
         if (skews.Any())
         {

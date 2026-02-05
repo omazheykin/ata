@@ -6,6 +6,7 @@ public class AppState
 {
     public bool IsSandboxMode { get; set; } = false;
     public bool IsAutoTradeEnabled { get; set; } = false;
+    public bool IsAutoRebalanceEnabled { get; set; } = false;
     public decimal MinProfitThreshold { get; set; } = 0.5m;
     public bool IsSmartStrategyEnabled { get; set; } = true;
     public decimal SafeBalanceMultiplier { get; set; } = 0.3m;

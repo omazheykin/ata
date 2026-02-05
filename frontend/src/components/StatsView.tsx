@@ -17,6 +17,7 @@ import type {
 import * as signalR from "@microsoft/signalr";
 import EventsModal from "./EventsModal";
 import HeatmapCellModal from "./HeatmapCellModal";
+import RebalancingPanel from "./RebalancingPanel";
 
 interface StatsViewProps {
   activeView: "live" | "stats";
@@ -377,47 +378,7 @@ const StatsView: React.FC<StatsViewProps> = ({ activeView, onViewChange }) => {
         </div>
 
         {/* Rebalancing Recommendation */}
-        <div
-          className={`rounded-xl p-6 border transition-all ${
-            rebalancing.recommendation.includes("balanced")
-              ? "bg-blue-500/10 border-blue-500/30"
-              : "bg-yellow-500/10 border-yellow-500/30 animate-pulse-glow"
-          }`}
-        >
-          <div className="flex items-center gap-4">
-            <div className="text-3xl">⚖️</div>
-            <div>
-              <h4 className="text-lg font-bold text-white mb-1">
-                Rebalancing Recommendation
-              </h4>
-              <p className="text-gray-200">{rebalancing.recommendation}</p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {Object.entries(rebalancing.assetSkews).map(([asset, skew]) => (
-              <div
-                key={asset}
-                className="glass rounded-lg p-2 text-center border border-white/5"
-              >
-                <p className="text-xs text-gray-400 uppercase">{asset}</p>
-                <div className="h-1.5 w-full bg-white/10 rounded-full my-2 overflow-hidden flex">
-                  <div
-                    className={`h-full ${skew < 0 ? "bg-blue-500" : "bg-purple-500"}`}
-                    style={{
-                      width: `${Math.abs(skew) * 100}%`,
-                      marginLeft: skew < 0 ? "auto" : "0",
-                    }}
-                  />
-                </div>
-                <p
-                  className={`text-xs font-bold ${Math.abs(skew) > 0.3 ? "text-yellow-400" : "text-gray-400"}`}
-                >
-                  {skew > 0 ? "↑ Binance" : "↓ Coinbase"}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RebalancingPanel rebalancing={rebalancing} />
       </div>
 
       {/* Summary Row */}

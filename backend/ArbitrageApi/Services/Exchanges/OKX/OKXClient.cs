@@ -86,6 +86,16 @@ public class OKXClient : IExchangeClient
         return _currentState.GetBalancesAsync();
     }
 
+    public Task<decimal?> GetWithdrawalFeeAsync(string asset)
+    {
+        return _currentState.GetWithdrawalFeeAsync(asset);
+    }
+
+    public Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        return _currentState.WithdrawAsync(asset, amount, address, network);
+    }
+
     public void SetSandboxMode(bool enabled)
     {
         _isSandbox = enabled;

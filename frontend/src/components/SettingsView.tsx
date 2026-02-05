@@ -78,6 +78,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
       await apiService.setPairThresholds(state.pairThresholds);
       await apiService.setSafeMultiplier(state.safeBalanceMultiplier);
       await apiService.setUseTakerFees(state.useTakerFees);
+      await apiService.toggleAutoRebalance(state.isAutoRebalanceEnabled);
       onClose();
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -201,6 +202,62 @@ const SettingsView: React.FC<SettingsViewProps> = ({ isOpen, onClose }) => {
                           ? "Uses market order fees (Safer)"
                           : "Uses limit order fees (Riskier)"}
                       </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Automation & Rebalancing */}
+                <section>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">
+                    Automation & Rebalancing
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="glass p-4 rounded-xl border border-white/5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">
+                            Smart Rebalancing
+                          </label>
+                          <p className="text-[10px] text-gray-500 italic">
+                            Automate fund transfers between exchanges.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setState({
+                              ...state,
+                              isAutoRebalanceEnabled:
+                                !state.isAutoRebalanceEnabled,
+                            })
+                          }
+                          className={`w-12 h-6 rounded-full transition-all relative ${state.isAutoRebalanceEnabled ? "bg-green-500" : "bg-white/10"}`}
+                        >
+                          <div
+                            className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${state.isAutoRebalanceEnabled ? "left-7" : "left-1"}`}
+                          />
+                        </button>
+                      </div>
+                      <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                        <p className="text-[9px] text-blue-300">
+                          ℹ️ Optimized execution: moves funds only during{" "}
+                          <b>low-activity windows</b> or <b>strong trends</b> to
+                          minimize fees.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="glass p-4 rounded-xl border border-white/5 flex items-center justify-between opacity-50 cursor-not-allowed">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1 uppercase">
+                          Trend-Aware Trading
+                        </label>
+                        <p className="text-[10px] text-gray-500 italic">
+                          Adjust trade size based on market direction.
+                        </p>
+                      </div>
+                      <div className="w-12 h-6 rounded-full bg-white/5 relative">
+                        <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white/20" />
+                      </div>
                     </div>
                   </div>
                 </section>

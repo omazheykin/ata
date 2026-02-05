@@ -338,6 +338,15 @@ public class ArbitrageDetectionService : BackgroundService
         await _hubContext.Clients.All.SendAsync("ReceiveFeeModeUpdate", useTakerFees);
     }
 
+    public async Task SetAutoRebalance(bool enabled)
+    {
+        _logger.LogInformation("🔄 Switching Auto-Rebalance to: {Status}", enabled ? "ENABLED" : "DISABLED");
+        var state = _persistenceService.GetState();
+        state.IsAutoRebalanceEnabled = enabled;
+        _persistenceService.SaveState(state);
+        await _hubContext.Clients.All.SendAsync("ReceiveAutoRebalanceUpdate", enabled);
+    }
+
     private async Task PeriodicallyBroadcastStatusAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)

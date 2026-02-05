@@ -42,6 +42,12 @@ public class BinanceSandboxState : BinanceBaseState
         return Task.FromResult(result);
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        Logger.LogInformation("🧪 [Sandbox] Mock Withdrawal of {Amount} {Asset} to {Address} (Network: {Network})", amount, asset, address, network ?? "Default");
+        return Task.FromResult($"mock_tx_{Guid.NewGuid()}");
+    }
+
     public override Task DepositSandboxFundsAsync(string asset, decimal amount)
     {
         _balances.AddOrUpdate(asset, amount, (_, old) => old + amount);

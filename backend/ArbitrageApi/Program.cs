@@ -109,6 +109,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ArbitrageApi.Servi
 // Register Services
 builder.Services.AddSingleton<ChannelProvider>();
 builder.Services.AddSingleton<StatePersistenceService>();
+builder.Services.AddSingleton<ITrendAnalysisService, TrendAnalysisService>();
 builder.Services.AddSingleton<RebalancingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RebalancingService>());
 builder.Services.AddSingleton<TradeService>();

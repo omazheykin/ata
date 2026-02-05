@@ -124,6 +124,31 @@ public abstract class BinanceBaseState : IExchangeState
     {
         return;
     }
+    public virtual Task<decimal?> GetWithdrawalFeeAsync(string asset)
+    {
+        // Mock/Default fees for common assets
+        // In a real implementation, this would call GET /sapi/v1/capital/config/getall
+        var fee = asset.ToUpper() switch
+        {
+            "BTC" => 0.0005m,
+            "ETH" => 0.002m,
+            "USDT" => 5.0m, // ERC20 estimate
+            "USDC" => 5.0m,
+            "SOL" => 0.01m,
+            "BNB" => 0.001m,
+            "XRP" => 0.25m,
+            "ADA" => 1.0m,
+            "AVAX" => 0.1m,
+            "DOT" => 0.1m,
+            "MATIC" => 0.1m, // POL
+            "LINK" => 0.5m,
+            _ => 1.0m // Fallback for unknown assets
+        };
+        return Task.FromResult<decimal?>(fee);
+    }
+    
+    public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
+
     public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         try

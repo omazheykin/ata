@@ -72,6 +72,12 @@ public class CoinbaseRealState : CoinbaseBaseState
         }
     }
 
+    public override Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null)
+    {
+        // POST /v2/accounts/:account_id/withdrawals/crypto (Mock for now)
+        throw new NotImplementedException("Coinbase real withdrawals not yet enabled for safety.");
+    }
+
     public override async Task<List<Balance>> GetBalancesAsync()
     {
         try

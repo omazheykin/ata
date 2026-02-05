@@ -63,6 +63,14 @@ public class TradeService : BackgroundService
     {
         _logger.LogInformation("🚀 Trade Service background worker started");
 
+        var tradeTask = ProcessTradeSignalsAsync(stoppingToken);
+        var rebalanceTask = ProcessRebalanceSignalsAsync(stoppingToken);
+
+        await Task.WhenAll(tradeTask, rebalanceTask);
+    }
+
+    private async Task ProcessTradeSignalsAsync(CancellationToken stoppingToken)
+    {
         try
         {
             await foreach (var opportunity in _channelProvider.TradeChannel.Reader.ReadAllAsync(stoppingToken))
@@ -116,9 +124,9 @@ public class TradeService : BackgroundService
                     
                     if (opportunity.ProfitPercentage < adjustedThreshold)
                     {
-                         _logger.LogInformation("⚖️ Rebalancing: Skipping {Symbol} ({Profit}%). Adjusted threshold: {Threshold:N2}% (Base: {Base}%, Skew: {Skew:N2})", 
+                        _logger.LogInformation("⚖️ Rebalancing: Skipping {Symbol} ({Profit}%). Adjusted threshold: {Threshold:N2}% (Base: {Base}%, Skew: {Skew:N2})", 
                             opportunity.Symbol, opportunity.ProfitPercentage, adjustedThreshold, _minProfitThreshold, skew);
-                         continue;
+                        continue;
                     }
 
                     await ExecuteTradeAsync(opportunity, stoppingToken);
@@ -135,7 +143,43 @@ public class TradeService : BackgroundService
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("Trade Service stopping...");
+            _logger.LogInformation("Trade processing stopped.");
+        }
+    }
+
+    private async Task ProcessRebalanceSignalsAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await foreach (var proposal in _channelProvider.RebalanceChannel.Reader.ReadAllAsync(stoppingToken))
+            {
+                var state = _persistenceService.GetState();
+                if (!state.IsAutoRebalanceEnabled) continue;
+
+                _logger.LogInformation("⚖️ [AUTO-REBALANCE] Signal received for {Asset}. Checking window and trend...", proposal.Asset);
+
+                // Phase 3: Smart Decision
+                var window = await _rebalancingService.GetTrendAnalysisService().GetBestWindowAsync(stoppingToken);
+                
+                bool isStrongTrend = proposal.TrendDescription.Contains("Trend");
+                bool isLowActivityWindow = window?.IsCurrent ?? false;
+
+                if (isLowActivityWindow || isStrongTrend)
+                {
+                    _logger.LogInformation("🚀 [AUTO-REBALANCE] Criteria met: LowActivity={LowActivity}, Trend={Trend}. Executing...", 
+                        isLowActivityWindow, proposal.TrendDescription);
+                    await ExecuteRebalanceAsync(proposal, stoppingToken);
+                }
+                else
+                {
+                    _logger.LogInformation("⏳ [AUTO-REBALANCE] Waiting for better window or stronger trend. Current Window: {Day} {Hour}", 
+                        DateTime.UtcNow.DayOfWeek, DateTime.UtcNow.Hour);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Rebalance processing stopped.");
         }
     }
 
@@ -176,6 +220,58 @@ public class TradeService : BackgroundService
     {
         _strategy = strategy;
         _logger.LogInformation("Execution Strategy set to {Strategy}", strategy);
+    }
+
+    public async Task<bool> ExecuteRebalanceAsync(RebalancingProposal proposal, CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("⚖️ [AUTO-REBALANCE] Initiating transfer for {Asset}: {Amount} {Direction}", 
+                proposal.Asset, proposal.Amount, proposal.Direction);
+
+            var sourceName = proposal.Direction.Split(' ')[0];
+            var targetName = proposal.Direction.Split(' ')[2];
+            
+            var sourceClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == sourceName);
+            var targetClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == targetName);
+
+            if (sourceClient == null || targetClient == null)
+            {
+                _logger.LogError("Missing exchange client for rebalance: {Source} or {Target}", sourceName, targetName);
+                return false;
+            }
+
+            // In a real system, we'd need the deposit address from the TARGET exchange.
+            // For now, we'll use a placeholder or config.
+            string depositAddress = "MOCK_ADDRESS_REPLACE_WITH_REAL";
+            
+            var txId = await sourceClient.WithdrawAsync(proposal.Asset, proposal.Amount, depositAddress);
+            
+            _logger.LogInformation("✅ [AUTO-REBALANCE] Transfer submitted! TxId: {TxId}", txId);
+            
+            // Record a special transaction for history
+            var transaction = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTime.UtcNow,
+                Type = "Rebalance",
+                Asset = proposal.Asset,
+                Amount = proposal.Amount,
+                Exchange = proposal.Direction,
+                Status = "Success",
+                BuyOrderId = txId // Store TxId here for lack of better field
+            };
+            
+            _channelProvider.TransactionChannel.Writer.TryWrite(transaction);
+            await _hubContext.Clients.All.SendAsync("ReceiveTransaction", transaction, ct);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute auto-rebalance for {Asset}", proposal.Asset);
+            return false;
+        }
     }
 
     public async Task<bool> ExecuteTradeAsync(ArbitrageOpportunity opportunity, CancellationToken ct = default)

@@ -121,6 +121,11 @@ export const apiService = {
         const response = await apiClient.post<{ enabled: boolean }>(`/settings/taker-fees?enabled=${enabled}`);
         return response.data;
     },
+    
+    async toggleAutoRebalance(enabled: boolean): Promise<{ enabled: boolean }> {
+        const response = await apiClient.post<{ enabled: boolean }>(`/settings/auto-rebalance?enabled=${enabled}`);
+        return response.data;
+    },
 
     async deposit(exchange: string, asset: string, amount: number): Promise<{ success: boolean }> {
         const response = await apiClient.post<{ success: boolean }>('/balances/deposit', {
