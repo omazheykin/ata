@@ -19,7 +19,28 @@ public abstract class OKXBaseState : IOKXState
     private (decimal Maker, decimal Taker)? _cachedFees;
     private DateTime _lastFeeUpdate = DateTime.MinValue;
     private readonly TimeSpan _feeTtl = TimeSpan.FromHours(1);
+    
     protected List<Balance> CachedBalances = new();
+    protected DateTime LastBalanceUpdate = DateTime.MinValue;
+    protected readonly TimeSpan BalanceTtl = TimeSpan.FromSeconds(30);
+
+    public virtual async Task<List<Balance>> GetCachedBalancesAsync()
+    {
+        if (CachedBalances.Any() && (DateTime.UtcNow - LastBalanceUpdate) < BalanceTtl)
+        {
+            Logger.LogDebug("💰 [OKX] Using cached balances ({Count} items)", CachedBalances.Count);
+            return CachedBalances;
+        }
+
+        Logger.LogInformation("🔄 [OKX] Fetching fresh balances from API...");
+        var balances = await GetBalancesAsync();
+        if (balances != null && balances.Any())
+        {
+            CachedBalances = balances;
+            LastBalanceUpdate = DateTime.UtcNow;
+        }
+        return CachedBalances;
+    }
 
     protected OKXBaseState(
         HttpClient httpClient,

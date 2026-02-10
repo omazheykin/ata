@@ -16,6 +16,7 @@ public class ArbitrageStatsService : BackgroundService
     private readonly RebalancingService _rebalancingService;
     private readonly StatsBootstrapService _bootstrapService;
     private readonly Type[] _parallelProcessors;
+    private readonly string[] _days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
 
     public ArbitrageStatsService(
         IServiceProvider serviceProvider, 
@@ -228,11 +229,10 @@ public class ArbitrageStatsService : BackgroundService
             response.Summary.AvgSeriesDuration = seriesLengths.Average();
         }
 
-        // 6. Calendar Logic
-        var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+  
         var maxHourlyCount = hourMetrics.Any() ? hourMetrics.Max(m => m.EventCount) : 1;
 
-        foreach (var day in days)
+        foreach (var day in _days)
         {
             var dayHours = new Dictionary<string, HourDetail>();
             var dayShort = day.Substring(0, 3);

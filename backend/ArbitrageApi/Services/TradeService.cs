@@ -19,9 +19,12 @@ public class TradeService : BackgroundService
     private readonly ChannelProvider _channelProvider;
     private readonly StatePersistenceService _persistenceService;
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<ArbitrageApi.Hubs.ArbitrageHub> _hubContext;
-    private readonly ArbitrageStatsService _statsService;
+    private readonly ArbitrageStatsService _statsService; // Helper for stats, though maybe we don't need it for validation
     private readonly RebalancingService _rebalancingService;
     private readonly OrderExecutionService _executionService;
+    private readonly ArbitrageCalculator _calculator;
+    private readonly IEnumerable<IBookProvider> _bookProviders;
+    private readonly IEnumerable<IExchangeClient> _exchangeClients;
 
     public TradeService(
         ILogger<TradeService> logger, 
@@ -31,7 +34,10 @@ public class TradeService : BackgroundService
         ChannelProvider channelProvider,
         ArbitrageStatsService statsService,
         RebalancingService rebalancingService,
-        OrderExecutionService executionService)
+        OrderExecutionService executionService,
+        ArbitrageCalculator calculator,
+        IEnumerable<IBookProvider> bookProviders,
+        IEnumerable<IExchangeClient> exchangeClients)
     {
         _logger = logger;
         _persistenceService = persistenceService;
@@ -40,6 +46,9 @@ public class TradeService : BackgroundService
         _statsService = statsService;
         _rebalancingService = rebalancingService;
         _executionService = executionService;
+        _calculator = calculator;
+        _bookProviders = bookProviders;
+        _exchangeClients = exchangeClients;
         
         // Load state from persistence
         var state = _persistenceService.GetState();
@@ -58,7 +67,7 @@ public class TradeService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("🚀 Trade Service background worker started");
+        _logger.LogInformation("🚀 Trade Service background worker started (Clean Architecture)");
 
         var tradeTask = ProcessTradeSignalsAsync(stoppingToken);
         var rebalanceTask = ProcessRebalanceSignalsAsync(stoppingToken);
@@ -70,66 +79,87 @@ public class TradeService : BackgroundService
     {
         try
         {
-            await foreach (var opportunity in _channelProvider.TradeChannel.Reader.ReadAllAsync(stoppingToken))
+            await foreach (var candidate in _channelProvider.TradeChannel.Reader.ReadAllAsync(stoppingToken))
             {
-                _logger.LogInformation("💰 Trade Service: Signal received for {Symbol} ({Profit}%). Checking filters...", opportunity.Symbol, opportunity.ProfitPercentage);
+                // _logger.LogInformation("💰 Trade Signal received for {Symbol}. Validating...", candidate.Symbol);
+                
                 try
                 {
                     var state = _persistenceService.GetState();
                     if (state.IsSafetyKillSwitchTriggered)
                     {
-                        _logger.LogWarning("🛡️ Trade blocked by SAFETY KILL-SWITCH. Reason: {Reason}", state.GlobalKillSwitchReason);
+                        // _logger.LogWarning("🛡️ blocked by KILL-SWITCH.");
                         continue;
                     }
 
-                    if (!_isAutoTradeEnabled)
+                    if (!_isAutoTradeEnabled) continue;
+
+                    // 1. RE-VALIDATE with Full Data (OrderBook, Fees, Balances)
+                    // The Detector only gave us a "Candidate" based on Top-of-Book and Calendar.
+                    // We must now ensure it is ACTUALLY profitable with fees, slippage, and balances.
+
+                    // A. Get Order Books
+                    var buyBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.BuyExchange)?.GetOrderBook(candidate.Symbol);
+                    var sellBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.SellExchange)?.GetOrderBook(candidate.Symbol);
+
+                    if (buyBook == null || sellBook == null) 
                     {
-                        _logger.LogDebug("Auto-Trade is disabled, skipping opportunity for {Symbol}", opportunity.Symbol);
+                        _logger.LogWarning("⚠️ validation failed: Order books not available for {Symbol}", candidate.Symbol);
                         continue;
                     }
 
-                    // CALENDAR INTEGRATION: Check activity zone before trading
-                    var stats = await _statsService.GetStatsAsync();
-                    var now = DateTime.UtcNow;
-                    var day = now.DayOfWeek.ToString().Substring(0, 3);
-                    var hour = now.Hour.ToString("D2");
+                    // B. Get Fees (Cached from Exchange Clients)
+                    var buyClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == candidate.BuyExchange);
+                    var sellClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == candidate.SellExchange);
 
-                    if (stats.Calendar.TryGetValue(day, out var dayHours) && dayHours.TryGetValue(hour, out var detail))
+                    if (buyClient == null || sellClient == null)
                     {
-                        if (detail.Zone == "low_activity")
-                        {
-                            _logger.LogInformation("📉 Auto-Trade: Current activity zone is LOW, but proceeding for verification... (Symbol: {Symbol})", opportunity.Symbol);
-                            // continue;
-                        }
+                        _logger.LogWarning("⚠️ validation failed: Exchange clients not found for {Symbol}", candidate.Symbol);
+                        continue;
                     }
 
-                    // Determine base threshold (Global vs Pair-Specific)
-                    var effectiveBaseThreshold = _minProfitThreshold;
-                    if (state.PairThresholds.TryGetValue(opportunity.Symbol, out var pairThreshold))
+                    var buyFees = await buyClient.GetCachedFeesAsync() ?? (0.001m, 0.001m);
+                    var sellFees = await sellClient.GetCachedFeesAsync() ?? (0.001m, 0.001m);
+
+                    // C. Get Balances (Cached from Exchange Clients)
+                    var buyBalances = await buyClient.GetCachedBalancesAsync();
+                    var sellBalances = await sellClient.GetCachedBalancesAsync();
+
+                    // 2. RUN CALCULATOR
+                    var validatedOpp = _calculator.CalculatePairOpportunity(
+                        candidate.Symbol,
+                        candidate.BuyExchange,
+                        candidate.SellExchange,
+                        buyBook.Value.Asks, // We buy from Asks
+                        sellBook.Value.Bids, // We sell to Bids
+                        buyFees,
+                        sellFees,
+                        state.IsSandboxMode,
+                        _minProfitThreshold, // Global threshold
+                        buyBalances,
+                        sellBalances,
+                        state.SafeBalanceMultiplier,
+                        state.UseTakerFees,
+                        state.PairThresholds);
+
+                    if (validatedOpp == null)
                     {
-                        effectiveBaseThreshold = pairThreshold;
+                        // _logger.LogInformation("❌ Validation failed for {Symbol} (Slippage/Fees/Balances)", candidate.Symbol);
+                        continue;
                     }
 
-                    // Note: Rebalancing adjustments are now handled by PassiveRebalancingService.
-                    // This service handles STRICT profit-based trading.
-                    // We simply respect the config threshold here.
+                    // 3. CHECK PROFITABILITY logic was done inside Calculator (it returns null if < threshold)
+                    // But we can double check or log.
                     
-                    if (opportunity.ProfitPercentage < effectiveBaseThreshold)
-                    {
-                        _logger.LogInformation("🛑 Skipping {Symbol} ({Profit}%). Below threshold {Threshold}%", 
-                            opportunity.Symbol, opportunity.ProfitPercentage, effectiveBaseThreshold);
-                        continue;
-                    }
+                    _logger.LogInformation("✅ Trade VALIDATED: {Symbol}, Net Profit: {NetProfit}%, Vol: {Vol}", 
+                        validatedOpp.Symbol, validatedOpp.ProfitPercentage, validatedOpp.Volume);
 
-                    await _executionService.ExecuteTradeAsync(opportunity, effectiveBaseThreshold, stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
+                    // 4. EXECUTE
+                    await _executionService.ExecuteTradeAsync(validatedOpp, _minProfitThreshold, stoppingToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing trade from channel for {Symbol}", opportunity.Symbol);
+                    _logger.LogError(ex, "Error processing trade validation for {Symbol}", candidate.Symbol);
                 }
             }
         }

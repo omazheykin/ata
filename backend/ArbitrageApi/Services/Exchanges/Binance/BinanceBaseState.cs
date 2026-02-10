@@ -24,7 +24,10 @@ public abstract class BinanceBaseState : IExchangeState
     private (decimal Maker, decimal Taker)? _cachedFees;
     private DateTime _lastFeeUpdate = DateTime.MinValue;
     private readonly TimeSpan _feeTtl = TimeSpan.FromMinutes(5);
+    
     protected List<Balance> CachedBalances = new();
+    protected DateTime LastBalanceUpdate = DateTime.MinValue;
+    protected readonly TimeSpan BalanceTtl = TimeSpan.FromSeconds(30);
 
     protected BinanceBaseState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, string baseUrl)
     {
@@ -120,6 +123,24 @@ public abstract class BinanceBaseState : IExchangeState
         return _cachedFees ?? (0.001m, 0.001m);
     }
     public abstract Task<List<Balance>> GetBalancesAsync();
+
+    public virtual async Task<List<Balance>> GetCachedBalancesAsync()
+    {
+        if (CachedBalances.Any() && (DateTime.UtcNow - LastBalanceUpdate) < BalanceTtl)
+        {
+            Logger.LogDebug("💰 [Binance] Using cached balances ({Count} items)", CachedBalances.Count);
+            return CachedBalances;
+        }
+
+        Logger.LogInformation("🔄 [Binance] Fetching fresh balances from API...");
+        var balances = await GetBalancesAsync();
+        if (balances != null && balances.Any())
+        {
+            CachedBalances = balances;
+            LastBalanceUpdate = DateTime.UtcNow;
+        }
+        return CachedBalances;
+    }
 
     public async Task UpdateSymbolMappingWithSupportedProductsAsync()
     {

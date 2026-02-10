@@ -10,6 +10,8 @@ public class Transaction
     public string Asset { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Exchange { get; set; } = string.Empty;
+    public string? BuyExchange { get; set; }
+    public string? SellExchange { get; set; }
     public decimal Price { get; set; }
     public decimal Fee { get; set; }
     public decimal Profit { get; set; }

@@ -213,4 +213,31 @@ public class ArbitrageCalculatorTests
         result.Should().NotBeNull();
         result!.Volume.Should().Be(0.02m);
     }
+
+    [Fact]
+    public void CalculatePairOpportunity_ShouldRespectIndividualBalanceLists()
+    {
+        // Arrange
+        var asks = new List<(decimal Price, decimal Quantity)> { (50000m, 10.0m) };
+        var bids = new List<(decimal Price, decimal Quantity)> { (51000m, 10.0m) };
+        var buyFees = (0.001m, 0.001m);
+        var sellFees = (0.001m, 0.001m);
+        
+        var buyBalances = new List<Balance> { new Balance { Asset = "USDT", Free = 10000m } };
+        var sellBalances = new List<Balance> { new Balance { Asset = "BTC", Free = 100m } };
+
+        // Act
+        // At 50,000 price, $10,000 USDT can buy 0.2 BTC.
+        // With 0.3 multiplier (default), we can use $3,000 USDT which buys 0.06 BTC.
+        // On sell side, 100 BTC * 0.3 = 30 BTC.
+        // Min of liquidity(10), buy(0.06), sell(30) is 0.06.
+        var result = _calculator.CalculatePairOpportunity(
+            "BTCUSDT", "Binance", "Coinbase", 
+            asks, bids, buyFees, sellFees, true, 
+            buyBalances: buyBalances, sellBalances: sellBalances);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Volume.Should().Be(0.06m);
+    }
 }

@@ -86,6 +86,11 @@ public class OKXClient : IExchangeClient
         return _currentState.GetBalancesAsync();
     }
 
+    public Task<List<Balance>> GetCachedBalancesAsync()
+    {
+        return _currentState.GetCachedBalancesAsync();
+    }
+
     public Task<decimal?> GetWithdrawalFeeAsync(string asset)
     {
         return _currentState.GetWithdrawalFeeAsync(asset);

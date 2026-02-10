@@ -38,7 +38,8 @@ public class ArbitrageCalculator
             bestPrices.BestSell.Value.Fees,
             isSandboxMode,
             minProfitThreshold,
-            balances,
+            balances?.GetValueOrDefault(bestPrices.BestBuy.Value.Exchange),
+            balances?.GetValueOrDefault(bestPrices.BestSell.Value.Exchange),
             safeBalanceMultiplier,
             useTakerFees,
             pairThresholds);
@@ -54,7 +55,8 @@ public class ArbitrageCalculator
         (decimal Maker, decimal Taker) sellFees,
         bool isSandboxMode,
         decimal? minProfitThreshold = null,
-        Dictionary<string, List<Balance>>? balances = null,
+        List<Balance>? buyBalances = null,
+        List<Balance>? sellBalances = null,
         decimal safeBalanceMultiplier = 0.3m,
         bool useTakerFees = true,
         Dictionary<string, decimal>? pairThresholds = null)
@@ -69,25 +71,21 @@ public class ArbitrageCalculator
 
         decimal maxVolume = liquidityLimit;
 
-        if (balances != null)
+        if (buyBalances != null && sellBalances != null)
         {
             var pair = TradingPair.CommonPairs.FirstOrDefault(p => p.Symbol == symbol);
             if (pair != null)
             {
-                if (balances.TryGetValue(buyExchange, out var buyBalances) &&
-                    balances.TryGetValue(sellExchange, out var sellBalances))
-                {
-                    var usdBalance = buyBalances.FirstOrDefault(b => b.Asset == pair.QuoteAsset || b.Asset == "USD")?.Free ?? 0m;
-                    var assetBalance = sellBalances.FirstOrDefault(b => b.Asset == pair.BaseAsset)?.Free ?? 0m;
+                var usdBalance = buyBalances.FirstOrDefault(b => b.Asset == pair.QuoteAsset || b.Asset == "USD")?.Free ?? 0m;
+                var assetBalance = sellBalances.FirstOrDefault(b => b.Asset == pair.BaseAsset)?.Free ?? 0m;
 
-                    // Use SafeBalanceMultiplier for risk management
-                    var maxVolFromUsd = (usdBalance * safeBalanceMultiplier) / asks[0].Price;
-                    var maxVolFromAsset = assetBalance * safeBalanceMultiplier;
+                // Use SafeBalanceMultiplier for risk management
+                var maxVolFromUsd = (usdBalance * safeBalanceMultiplier) / (asks.Count > 0 ? asks[0].Price : 1m);
+                var maxVolFromAsset = assetBalance * safeBalanceMultiplier;
 
-                    var balanceLimit = Math.Min(maxVolFromUsd, maxVolFromAsset);
-                    maxVolume = Math.Min(liquidityLimit, balanceLimit);
-                    maxVolume = Math.Round(maxVolume, 8);
-                }
+                var balanceLimit = Math.Min(maxVolFromUsd, maxVolFromAsset);
+                maxVolume = Math.Min(liquidityLimit, balanceLimit);
+                maxVolume = Math.Round(maxVolume, 8);
             }
         }
 
@@ -117,6 +115,19 @@ public class ArbitrageCalculator
 
         if (execution.BuyVolumeFilled >= 0.00001m)
         {
+            // 5. Apply Thresholds
+            var threshold = minProfitThreshold ?? 0.1m;
+            if (pairThresholds != null && pairThresholds.TryGetValue(symbol, out var pairSpecificThreshold))
+            {
+                threshold = pairSpecificThreshold;
+            }
+
+            if (netProfitPercentage < threshold)
+            {
+                // _logger.LogDebug("📉 {Symbol} profit {Profit}% below threshold {Threshold}%", symbol, netProfitPercentage, threshold);
+                return null;
+            }
+
             var pair = TradingPair.CommonPairs.FirstOrDefault(p => p.Symbol == symbol);
             return new ArbitrageOpportunity
             {

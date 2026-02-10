@@ -22,7 +22,28 @@ public abstract class CoinbaseBaseState : IExchangeState
     private (decimal Maker, decimal Taker)? _cachedFees;
     private DateTime _lastFeeUpdate = DateTime.MinValue;
     private readonly TimeSpan _feeTtl = TimeSpan.FromMinutes(5);
+    
     protected List<Balance> CachedBalances = new();
+    protected DateTime LastBalanceUpdate = DateTime.MinValue;
+    protected readonly TimeSpan BalanceTtl = TimeSpan.FromSeconds(30);
+
+    public virtual async Task<List<Balance>> GetCachedBalancesAsync()
+    {
+        if (CachedBalances.Any() && (DateTime.UtcNow - LastBalanceUpdate) < BalanceTtl)
+        {
+            Logger.LogDebug("💰 [Coinbase] Using cached balances ({Count} items)", CachedBalances.Count);
+            return CachedBalances;
+        }
+
+        Logger.LogInformation("🔄 [Coinbase] Fetching fresh balances from API...");
+        var balances = await GetBalancesAsync();
+        if (balances != null && balances.Any())
+        {
+            CachedBalances = balances;
+            LastBalanceUpdate = DateTime.UtcNow;
+        }
+        return CachedBalances;
+    }
 
     protected CoinbaseBaseState(HttpClient httpClient, ILogger logger, string apiKey, string apiSecret, string baseUrl)
     {

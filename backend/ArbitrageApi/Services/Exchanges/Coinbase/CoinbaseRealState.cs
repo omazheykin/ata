@@ -110,6 +110,7 @@ public class CoinbaseRealState : CoinbaseBaseState
             if (freshBalances.Any())
             {
                 CachedBalances = freshBalances;
+                LastBalanceUpdate = DateTime.UtcNow;
             }
 
             Logger.LogInformation("Fetched {Count} balances from Coinbase", freshBalances.Count);

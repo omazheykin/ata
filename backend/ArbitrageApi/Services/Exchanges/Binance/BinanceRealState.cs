@@ -80,6 +80,7 @@ public class BinanceRealState : BinanceBaseState
             if (freshBalances.Any())
             {
                 CachedBalances = freshBalances;
+                LastBalanceUpdate = DateTime.UtcNow;
             }
             
             return freshBalances;

@@ -56,6 +56,7 @@ public class CoinbaseClient : IExchangeClient
     public Task<ExchangePrice?> GetPriceAsync(string symbol) => _currentState.GetPriceAsync(symbol);
     public Task<Dictionary<string, ExchangePrice>> GetPricesAsync(List<string> symbols) => _currentState.GetPricesAsync(symbols);
     public Task<List<Balance>> GetBalancesAsync() => _currentState.GetBalancesAsync();
+    public Task<List<Balance>> GetCachedBalancesAsync() => _currentState.GetCachedBalancesAsync();
     public Task<decimal?> GetWithdrawalFeeAsync(string asset) => _currentState.GetWithdrawalFeeAsync(asset);
     public Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null) => _currentState.WithdrawAsync(asset, amount, address, network);
     public System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default) => _currentState.GetDepositAddressAsync(asset, ct);

@@ -95,6 +95,21 @@ public class OrderExecutionService
             _logger.LogError(ex, "Failed to execute trade for {Symbol}", opportunity.Symbol);
             return false;
         }
+        finally
+        {
+            // Force balance refresh after trade attempt (even if failed, balances might have changed)
+            _ = Task.Run(async () => {
+                try {
+                    var buyClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName.Equals(opportunity.BuyExchange, StringComparison.OrdinalIgnoreCase));
+                    var sellClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName.Equals(opportunity.SellExchange, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (buyClient != null) await buyClient.GetBalancesAsync();
+                    if (sellClient != null) await sellClient.GetBalancesAsync();
+                } catch (Exception ex) {
+                    _logger.LogWarning("Failed to force-refresh balances after trade: {Message}", ex.Message);
+                }
+            });
+        }
     }
 
     private async Task<bool> ExecuteSequentialAsync(ArbitrageOpportunity opportunity, IExchangeClient buyClient, IExchangeClient sellClient, CancellationToken ct)
@@ -190,9 +205,9 @@ public class OrderExecutionService
         decimal sellQty = sell?.ExecutedQuantity ?? 0m;
         decimal sellProceeds = sellPrice * sellQty;
 
-        // Estimate fees if not provided by exchange (0.1% taker fee)
-        decimal buyFee = buy.Fee > 0 ? buy.Fee : (buyCost * 0.001m);
-        decimal sellFee = (sell?.Fee ?? 0) > 0 ? sell!.Fee : (sellProceeds * 0.001m);
+        // Use real fees from the opportunity (which were fetched from exchange cache)
+        decimal buyFee = buy.Fee > 0 ? buy.Fee : (buyCost * opportunity.BuyFee);
+        decimal sellFee = (sell?.Fee ?? 0) > 0 ? sell!.Fee : (sellProceeds * opportunity.SellFee);
         decimal totalFees = buyFee + sellFee;
 
         // Realized Profit = (Sell Proceeds - Buy Cost) - Total Fees
@@ -210,6 +225,8 @@ public class OrderExecutionService
             Asset = opportunity.Asset,
             Amount = buy.ExecutedQuantity,
             Exchange = $"{opportunity.BuyExchange} → {opportunity.SellExchange}",
+            BuyExchange = opportunity.BuyExchange,
+            SellExchange = opportunity.SellExchange,
             Price = buyPrice,
             Fee = totalFees, // Legacy Fee field (Projected/Estimated)
             Profit = (sellPrice - buyPrice) * buyQty, // Legacy Profit field (Gross / Projected)

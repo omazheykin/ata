@@ -181,6 +181,7 @@ public class OKXRealState : OKXBaseState
             if (freshBalances.Any())
             {
                 CachedBalances = freshBalances;
+                LastBalanceUpdate = DateTime.UtcNow;
             }
 
             return freshBalances;

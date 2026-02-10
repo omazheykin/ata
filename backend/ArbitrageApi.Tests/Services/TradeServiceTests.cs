@@ -24,6 +24,10 @@ public class TradeServiceTests
     private readonly Mock<OrderExecutionService> _executionMock;
     private readonly TradeService _service;
 
+    private readonly List<IExchangeClient> _exchangeClientsList = new();
+    private readonly List<IBookProvider> _bookProvidersList = new();
+    private readonly ArbitrageCalculator _calculator;
+
     public TradeServiceTests()
     {
         _loggerMock = new Mock<ILogger<TradeService>>();
@@ -45,6 +49,7 @@ public class TradeServiceTests
         _hubContextMock.Setup(h => h.Clients).Returns(mockClients.Object);
 
         _channelProvider = new ChannelProvider();
+        _calculator = new ArbitrageCalculator(new Mock<ILogger<ArbitrageCalculator>>().Object);
         
         // Mock other services
         _statsMock = new Mock<ArbitrageStatsService>(
@@ -55,9 +60,35 @@ public class TradeServiceTests
             null!); // StatsBootstrapService
         _statsMock.Setup(s => s.GetStatsAsync()).ReturnsAsync(new StatsResponse());
 
+        // Setup Exchange Mocks
+        var binanceMock = new Mock<IExchangeClient>();
+        binanceMock.Setup(e => e.ExchangeName).Returns("Binance");
+        binanceMock.Setup(e => e.GetBalancesAsync()).ReturnsAsync(new List<Balance>());
+        binanceMock.Setup(e => e.GetCachedBalancesAsync()).ReturnsAsync(new List<Balance>());
+        binanceMock.Setup(e => e.GetCachedFeesAsync()).ReturnsAsync((0.001m, 0.001m));
+        _exchangeClientsList.Add(binanceMock.Object);
+
+        var coinbaseMock = new Mock<IExchangeClient>();
+        coinbaseMock.Setup(e => e.ExchangeName).Returns("Coinbase");
+        coinbaseMock.Setup(e => e.GetBalancesAsync()).ReturnsAsync(new List<Balance>());
+        coinbaseMock.Setup(e => e.GetCachedBalancesAsync()).ReturnsAsync(new List<Balance>());
+        coinbaseMock.Setup(e => e.GetCachedFeesAsync()).ReturnsAsync((0.001m, 0.001m));
+        _exchangeClientsList.Add(coinbaseMock.Object);
+
+        // Setup Book Provider Mocks
+        var binanceBookMock = new Mock<IBookProvider>();
+        binanceBookMock.Setup(p => p.ExchangeName).Returns("Binance");
+        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }) ));
+        _bookProvidersList.Add(binanceBookMock.Object);
+
+        var coinbaseBookMock = new Mock<IBookProvider>();
+        coinbaseBookMock.Setup(p => p.ExchangeName).Returns("Coinbase");
+        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)> { (51000m, 1.0m) }, new List<(decimal, decimal)>()) ));
+        _bookProvidersList.Add(coinbaseBookMock.Object);
+
         _rebalancingMock = new Mock<RebalancingService>(
             new Mock<ILogger<RebalancingService>>().Object,
-            new List<IExchangeClient>(),
+            _exchangeClientsList,
             new Mock<ITrendAnalysisService>().Object,
             _channelProvider,
             _persistenceMock.Object,
@@ -65,7 +96,7 @@ public class TradeServiceTests
 
         _executionMock = new Mock<OrderExecutionService>(
             new Mock<ILogger<OrderExecutionService>>().Object,
-            new List<IExchangeClient>(),
+            _exchangeClientsList,
             _channelProvider,
             _hubContextMock.Object);
 
@@ -77,7 +108,10 @@ public class TradeServiceTests
             _channelProvider,
             _statsMock.Object,
             _rebalancingMock.Object,
-            _executionMock.Object);
+            _executionMock.Object,
+            _calculator,
+            _bookProvidersList,
+            _exchangeClientsList);
     }
 
     /// <summary>
@@ -174,7 +208,7 @@ public class TradeServiceTests
         _service.SetAutoTrade(true);
         _service.SetMinProfitThreshold(0.1m);
         
-        var opportunity = new ArbitrageOpportunity { Symbol = "BTCUSD", ProfitPercentage = 0.5m };
+        var opportunity = new ArbitrageOpportunity { Symbol = "BTCUSD", BuyExchange = "Binance", SellExchange = "Coinbase", ProfitPercentage = 0.5m };
         var cts = new CancellationTokenSource(100);
         var method = typeof(TradeService).GetMethod("ProcessTradeSignalsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
@@ -206,7 +240,18 @@ public class TradeServiceTests
         
         _service.SetAutoTrade(true);
         
-        var opportunity = new ArbitrageOpportunity { Symbol = "ETHUSD", ProfitPercentage = 0.7m }; // 0.7 < 1.0, should skip
+        // Setup specific books to result in ~0.8% profit
+        var binanceBookMock = new Mock<IBookProvider>();
+        binanceBookMock.Setup(p => p.ExchangeName).Returns("Binance");
+        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }) ));
+        _bookProvidersList[0] = binanceBookMock.Object;
+
+        var coinbaseBookMock = new Mock<IBookProvider>();
+        coinbaseBookMock.Setup(p => p.ExchangeName).Returns("Coinbase");
+        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)> { (50500m, 1.0m) }, new List<(decimal, decimal)>()) ));
+        _bookProvidersList[1] = coinbaseBookMock.Object;
+
+        var opportunity = new ArbitrageOpportunity { Symbol = "ETHUSD", BuyExchange = "Binance", SellExchange = "Coinbase", ProfitPercentage = 0.7m }; 
         var cts = new CancellationTokenSource(100);
         var method = typeof(TradeService).GetMethod("ProcessTradeSignalsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 

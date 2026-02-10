@@ -106,6 +106,29 @@ builder.Services.AddSingleton<ArbitrageApi.Services.Exchanges.OKX.OKXWsClient>()
 builder.Services.AddSingleton<ArbitrageApi.Services.Exchanges.IBookProvider>(sp => sp.GetRequiredService<ArbitrageApi.Services.Exchanges.OKX.OKXWsClient>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ArbitrageApi.Services.Exchanges.OKX.OKXWsClient>());
 
+// Register Configuration & Stats Services
+builder.Services.AddSingleton<ArbitrageApi.Configuration.PairsConfigRoot>(sp =>
+{
+    var config = new ArbitrageApi.Configuration.PairsConfigRoot();
+    config.Pairs = new List<ArbitrageApi.Configuration.PairConfig>
+    {
+        new() { Symbol = "BTC", MinDepth = 0.05, OptimalDepth = 0.5, AggressiveDepth = 0.01 },
+        new() { Symbol = "ETH", MinDepth = 0.5, OptimalDepth = 5.0, AggressiveDepth = 0.1 },
+        new() { Symbol = "SOL", MinDepth = 5.0, OptimalDepth = 50.0, AggressiveDepth = 1.0 },
+        new() { Symbol = "XRP", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 },
+        new() { Symbol = "ADA", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 },
+        new() { Symbol = "DOGE", MinDepth = 1000.0, OptimalDepth = 10000.0, AggressiveDepth = 200.0 },
+        new() { Symbol = "LTC", MinDepth = 2.0, OptimalDepth = 20.0, AggressiveDepth = 0.5 },
+        new() { Symbol = "LINK", MinDepth = 10.0, OptimalDepth = 100.0, AggressiveDepth = 2.0 },
+        new() { Symbol = "BCH", MinDepth = 1.0, OptimalDepth = 10.0, AggressiveDepth = 0.2 },
+        new() { Symbol = "XLM", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 }
+    };
+    return config;
+});
+
+builder.Services.AddSingleton<CalendarCache>();
+builder.Services.AddSingleton<DepthThresholdService>();
+
 // Register Services
 builder.Services.AddSingleton<ChannelProvider>();
 builder.Services.AddSingleton<StatePersistenceService>();
@@ -122,9 +145,12 @@ builder.Services.AddSingleton<ArbitrageStatsService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<ArbitrageStatsService>());
 builder.Services.AddSingleton<SmartStrategyService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<SmartStrategyService>());
+// Register Stats & Calendar Services
 builder.Services.AddTransient<StatsBootstrapService>();
 builder.Services.AddSingleton<ArbitrageExportService>();
 builder.Services.AddTransient<IStatsAggregator, StatsAggregator>();
+builder.Services.AddScoped<HistoricalAnalysisService>();
+builder.Services.AddHostedService<ArbitrageApi.Services.Stats.CalendarStatsService>();
 
 // Register Event Processors for Stats Chain
 builder.Services.AddTransient<ArbitrageApi.Services.Stats.Processors.NormalizationProcessor>();

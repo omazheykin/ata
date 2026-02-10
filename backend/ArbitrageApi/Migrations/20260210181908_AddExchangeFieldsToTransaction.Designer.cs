@@ -3,6 +3,7 @@ using System;
 using ArbitrageApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ArbitrageApi.Migrations
 {
     [DbContext(typeof(StatsDbContext))]
-    partial class StatsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260210181908_AddExchangeFieldsToTransaction")]
+    partial class AddExchangeFieldsToTransaction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");

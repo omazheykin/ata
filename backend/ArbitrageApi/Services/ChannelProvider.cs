@@ -12,4 +12,5 @@ public class ChannelProvider
     public Channel<StrategyUpdate> StrategyUpdateChannel { get; } = Channel.CreateUnbounded<StrategyUpdate>();
     public Channel<RebalancingProposal> RebalanceChannel { get; } = Channel.CreateUnbounded<RebalancingProposal>();
     public Channel<ArbitrageOpportunity> PassiveRebalanceChannel { get; } = Channel.CreateUnbounded<ArbitrageOpportunity>();
+    public Channel<CalendarEvent> CalendarStats { get; } = Channel.CreateUnbounded<CalendarEvent>();
 }
