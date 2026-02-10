@@ -151,21 +151,21 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
   if (!stats) return null;
 
   return (
-    <div className="glass rounded-xl p-6 border border-white/5 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4">
+    <div className="glass rounded-xl p-4 border border-white/5 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-3">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <span>📅</span> Calendar View
           </h3>
 
-          <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-lg border border-white/10">
-            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-              TZ Offset
+          <div className="flex items-center gap-2 px-2 py-0.5 bg-white/5 rounded-lg border border-white/10">
+            <span className="text-[9px] text-gray-500 font-black uppercase tracking-wider">
+              TZ
             </span>
             <select
               value={manualOffset}
               onChange={(e) => setManualOffset(parseInt(e.target.value))}
-              className="bg-transparent text-blue-400 text-xs font-bold focus:outline-none cursor-pointer"
+              className="bg-transparent text-blue-400 text-[10px] font-bold focus:outline-none cursor-pointer"
             >
               {[...Array(27)]
                 .map((_, i) => i - 12)
@@ -183,11 +183,11 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
         </div>
         <button
           onClick={fetchStats}
-          className="p-1.5 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
+          className="p-1 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
           title="Refresh Heatmap"
         >
           <svg
-            className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -202,15 +202,15 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 overflow-x-auto">
-        <div className="min-w-[300px]">
+      <div className="flex-1 min-h-0">
+        <div className="h-full flex flex-col justify-between">
           {/* Header Row */}
-          <div className="flex mb-1">
-            <div className="w-10 flex-none"></div>
+          <div className="flex mb-0.5">
+            <div className="w-8 flex-none"></div>
             {hours.map((h) => (
               <div
                 key={h}
-                className="flex-1 text-[8px] text-gray-500 text-center mx-[1px]"
+                className="flex-1 text-[7px] text-gray-500 text-center mx-[0.5px]"
               >
                 {h}
               </div>
@@ -219,8 +219,8 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
 
           {/* Rows */}
           {days.map((day) => (
-            <div key={day} className="flex mb-[2px]">
-              <div className="w-10 flex-none text-[10px] text-gray-500 font-bold flex items-center">
+            <div key={day} className="flex-1 flex mb-[1px] min-h-0">
+              <div className="w-8 flex-none text-[9px] text-gray-500 font-bold flex items-center">
                 {day}
               </div>
               {hours.map((h) => {
@@ -230,7 +230,6 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
                 const utcHour = cell?.utcHour;
 
                 const now = new Date();
-                // Shift "now" by manual offset to match wall clock
                 const shiftedNow = new Date(
                   now.getTime() + manualOffset * 3600000,
                 );
@@ -249,13 +248,13 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
                     onClick={() =>
                       handleHeatmapCellClick(day, parseInt(h), utcDay, utcHour)
                     }
-                    className={`flex-1 h-6 m-[1px] rounded-sm cursor-pointer transition-all ${
+                    className={`flex-1 min-h-[14px] m-[0.5px] cursor-pointer transition-all ${
                       detail
                         ? getVolatilityColor(detail.volatilityScore)
                         : "bg-white/5 hover:bg-white/10"
                     } ${
                       isNow
-                        ? "ring-2 ring-white ring-offset-1 ring-offset-[#0f172a] z-10 scale-110 shadow-lg shadow-white/20"
+                        ? "ring-1 ring-white ring-inset z-10 bg-white/20"
                         : ""
                     }`}
                     title={
@@ -277,9 +276,11 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
                     }
                   >
                     {detail && detail.avgOpportunitiesPerHour > 0 && (
-                      <span className="text-[8px] font-bold opacity-80 group-hover:opacity-100">
-                        {detail.avgOpportunitiesPerHour.toFixed(0)}
-                      </span>
+                      <div className="h-full flex items-center justify-center">
+                        <span className="text-[7px] font-black opacity-60 leading-none">
+                          {detail.avgOpportunitiesPerHour.toFixed(0)}
+                        </span>
+                      </div>
                     )}
                   </div>
                 );
