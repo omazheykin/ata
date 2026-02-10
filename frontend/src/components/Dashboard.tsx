@@ -652,7 +652,6 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               isExpanded={isLeftPanelExpanded}
               balances={balances}
               transactions={transactions}
-              isAutoTradeEnabled={isAutoTradeEnabled}
               loading={loadingBalances}
               error={balanceError}
               onRefresh={fetchBalances}
