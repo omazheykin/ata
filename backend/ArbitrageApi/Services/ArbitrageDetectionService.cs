@@ -212,11 +212,14 @@ public class ArbitrageDetectionService : BackgroundService
         // 2. Dashboard and Trading
         
         // Calculate total value of the opportunity in USD (Volume * Price)
-        // Ensure strictly > 0 profit and meets minimum value threshold ($100)
-        bool isValuableEnough = (opportunity.Volume * opportunity.BuyPrice) >= 100m;
+        // Ensure strictly > 0 profit and meets minimum value threshold ($10 for now)
+        bool isValuableEnough = (opportunity.Volume * opportunity.BuyPrice) >= 10m;
+        
+        // In sandbox mode, allow even smaller opportunities for testing
+        if (_isSandboxMode) isValuableEnough = true;
 
         if (opportunity.ProfitPercentage >= _currentMinProfitThreshold 
-            && opportunity.ProfitPercentage > 0 
+            && (opportunity.ProfitPercentage > 0 || _isSandboxMode && opportunity.ProfitPercentage > -0.5m)
             && isValuableEnough)
         {
             lock (_lock)

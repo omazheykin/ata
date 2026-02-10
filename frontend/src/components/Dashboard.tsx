@@ -697,73 +697,67 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
                 </div>
               </div>
 
-              <div className="glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 flex-1 min-h-0">
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <h3 className="text-md font-bold text-white flex items-center gap-2">
-                    <span className="text-blue-400">⚡</span> Live Monitor
-                  </h3>
-                  <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
-                    <button
-                      onClick={() => setViewMode("card")}
-                      className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
-                        viewMode === "card"
-                          ? "bg-white/10 text-white"
-                          : "text-gray-500"
-                      }`}
-                    >
-                      Cards
-                    </button>
-                    <button
-                      onClick={() => setViewMode("list")}
-                      className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
-                        viewMode === "list"
-                          ? "bg-white/10 text-white"
-                          : "text-gray-500"
-                      }`}
-                    >
-                      List
-                    </button>
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {viewMode === "list" ? (
+                  <OpportunityList
+                    opportunities={opportunities}
+                    onSelect={setSelectedOpportunity}
+                    selectedId={selectedOpportunity?.id}
+                    threshold={strategyUpdate?.threshold ?? 0.1}
+                    balances={balances}
+                    onSwitchView={() => setViewMode("card")}
+                  />
+                ) : (
+                  <div className="glass rounded-xl p-4 border border-white/5 flex flex-col h-full">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2">
+                      <h3 className="text-md font-bold text-white flex items-center gap-2">
+                        <span className="text-blue-400">⚡</span> Live Monitor
+                      </h3>
+                      <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
+                        <button
+                          onClick={() => setViewMode("card")}
+                          className="px-3 py-1 rounded text-[10px] font-black uppercase bg-white/10 text-white transition-all"
+                        >
+                          Cards
+                        </button>
+                        <button
+                          onClick={() => setViewMode("list")}
+                          className="px-3 py-1 rounded text-[10px] font-black uppercase text-gray-500 hover:text-white transition-all"
+                        >
+                          List
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto pr-1">
+                      {opportunities.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-20">
+                          <div className="text-4xl mb-4 animate-bounce">🛰️</div>
+                          <p className="text-sm italic uppercase tracking-widest font-black">
+                            Syncing Stream...
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-4">
+                          {opportunities
+                            .slice()
+                            .reverse()
+                            .slice(0, 8)
+                            .map((o) => (
+                              <div
+                                className="scale-[0.98] transition-transform hover:scale-100"
+                                key={o.id}
+                              >
+                                <OpportunityCard
+                                  opportunity={o}
+                                  onClick={() => setSelectedOpportunity(o)}
+                                />
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
-                  {opportunities.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-20">
-                      <div className="text-4xl mb-4 animate-bounce">🛰️</div>
-                      <p className="text-sm italic uppercase tracking-widest font-black">
-                        Syncing Stream...
-                      </p>
-                    </div>
-                  ) : viewMode === "list" ? (
-                    <div className="scale-[0.98] origin-top">
-                      <OpportunityList
-                        opportunities={opportunities}
-                        onSelect={setSelectedOpportunity}
-                        selectedId={selectedOpportunity?.id}
-                        threshold={strategyUpdate?.threshold ?? 0.1}
-                        balances={balances}
-                      />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-4">
-                      {opportunities
-                        .slice()
-                        .reverse()
-                        .slice(0, 8)
-                        .map((o) => (
-                          <div
-                            className="scale-[0.98] transition-transform hover:scale-100"
-                            key={o.id}
-                          >
-                            <OpportunityCard
-                              opportunity={o}
-                              onClick={() => setSelectedOpportunity(o)}
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 

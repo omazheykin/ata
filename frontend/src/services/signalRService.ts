@@ -45,7 +45,10 @@ class SignalRService {
     }
 
     async startConnection(): Promise<signalR.HubConnection> {
-        if (this.connection.state === signalR.HubConnectionState.Connected) {
+        if (this.connection.state === signalR.HubConnectionState.Connected ||
+            this.connection.state === signalR.HubConnectionState.Connecting ||
+            this.connection.state === signalR.HubConnectionState.Reconnecting) {
+            console.log("SignalR already active/connecting:", this.connection.state);
             return this.connection;
         }
 

@@ -33,7 +33,7 @@ export const apiService = {
     },
 
     async getDetailedStats(): Promise<StatsResponse> {
-        const response = await apiClient.get<StatsResponse>('/statistics');
+        const response = await apiClient.get<StatsResponse>('/statistics', { timeout: 30000 });
         return response.data;
     },
 

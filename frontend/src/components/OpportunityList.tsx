@@ -8,6 +8,7 @@ interface OpportunityListProps {
   selectedId?: string;
   threshold: number;
   balances: Record<string, Balance[]>;
+  onSwitchView: () => void;
 }
 
 const OpportunityList: React.FC<OpportunityListProps> = ({
@@ -16,6 +17,7 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
   selectedId,
   threshold,
   balances,
+  onSwitchView,
 }) => {
   const [showRealOnly, setShowRealOnly] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -109,35 +111,50 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
   };
 
   return (
-    <div className="glass rounded-xl overflow-hidden border border-white/5 animate-fade-in">
+    <div className="glass rounded-xl overflow-hidden border border-white/5 animate-fade-in flex flex-col h-full">
       {/* ... keeping existing header ... */}
-      <div className="p-4 flex justify-between items-center border-b border-white/5">
+      <div className="p-4 flex justify-between items-center border-b border-white/5 flex-none sticky top-0 z-30 bg-[#0f172a]/95 backdrop-blur-md">
         <h3 className="text-white font-bold flex items-center gap-2">
           <span>Live Opportunities</span>
           <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-xs shadow-[0_0_10px_rgba(59,130,246,0.2)]">
             {filteredOpportunities.length}
           </span>
         </h3>
-        <label className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-          <span className="text-sm text-gray-400 font-medium">
-            Hide Below Threshold (&lt;{threshold.toFixed(2)}%)
-          </span>
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={showRealOnly}
-              onChange={(e) => setShowRealOnly(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-10 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
+            <button
+              onClick={onSwitchView}
+              className="px-3 py-1 rounded text-[10px] font-black uppercase text-gray-500 hover:text-white transition-all"
+            >
+              Cards
+            </button>
+            <button className="px-3 py-1 rounded text-[10px] font-black uppercase bg-white/10 text-white transition-all cursor-default">
+              List
+            </button>
           </div>
-        </label>
+
+          <label className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+            <span className="text-sm text-gray-400 font-medium">
+              Filter &lt;{threshold.toFixed(2)}%
+            </span>
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={showRealOnly}
+                onChange={(e) => setShowRealOnly(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-8 h-4 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-500"></div>
+            </div>
+          </label>
+        </div>
       </div>
 
-      <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-auto custom-scrollbar min-h-0">
         <table className="w-full text-left border-collapse relative">
-          <thead>
-            <tr className="bg-gray-900/95 backdrop-blur-sm text-gray-400 text-xs uppercase tracking-wider sticky top-0 z-20 shadow-sm">
+          <thead className="sticky top-0 z-20 bg-white/5 backdrop-blur-md">
+            <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-white/5">
               {/* ... existing columns ... */}
               <th className="p-3 font-medium">
                 <div className="flex items-center gap-1">Time</div>
@@ -194,13 +211,11 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                 <tr
                   key={opp.id}
                   onClick={() => onSelect(opp)}
-                  className={`group transition-colors cursor-pointer ${
-                    opp.id === selectedId
-                      ? "bg-blue-500/10"
-                      : "hover:bg-white/5"
+                  className={`group transition-colors cursor-pointer hover:bg-white/5 ${
+                    opp.id === selectedId ? "bg-blue-500/10" : ""
                   }`}
                 >
-                  <td className="p-3 text-xs text-gray-400 whitespace-nowrap">
+                  <td className="p-3 text-xs text-gray-300 whitespace-nowrap">
                     {new Date(opp.timestamp).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -219,12 +234,12 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex flex-col items-end">
-                      <span className="text-sm font-bold text-white">
+                      <span className="text-sm font-medium text-white">
                         {opp.volume.toLocaleString(undefined, {
                           maximumFractionDigits: 4,
                         })}
                       </span>
-                      <span className="text-[10px] text-gray-500 font-mono">
+                      <span className="text-[10px] text-gray-400 font-mono">
                         ≈$
                         {(opp.volume * opp.buyPrice).toLocaleString(undefined, {
                           maximumFractionDigits: 0,
@@ -237,13 +252,13 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                     <div className="flex flex-col items-end">
                       <div className="flex items-center gap-1">
                         <span
-                          className={`text-sm font-bold ${executableVol > 0 ? "text-blue-300" : "text-gray-500"}`}
+                          className={`text-sm font-medium ${executableVol > 0 ? "text-blue-300" : "text-gray-500"}`}
                         >
                           {executableVol.toLocaleString(undefined, {
                             maximumFractionDigits: 4,
                           })}
                         </span>
-                        <span className="text-[10px] text-gray-500 font-bold">
+                        <span className="text-[10px] text-gray-500 font-medium">
                           {opp.asset}
                         </span>
                       </div>
@@ -269,13 +284,14 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                   <td className="p-3 text-right">
                     <div className="flex flex-col items-end">
                       <span
-                        className={`text-sm font-bold ${
+                        className={`text-sm font-medium ${
                           opp.profitPercentage >= 0
                             ? "text-green-400"
                             : "text-red-400"
                         }`}
                       >
-                        +{opp.profitPercentage.toFixed(3)}%
+                        {opp.profitPercentage > 0 ? "+" : ""}
+                        {opp.profitPercentage.toFixed(3)}%
                       </span>
                     </div>
                   </td>
@@ -285,10 +301,10 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
                       title={`Based on executable volume: ${executableVol.toFixed(4)} ${opp.asset}`}
                     >
                       <span
-                        className={`text-sm font-bold ${executableVol > 0 ? "text-green-400" : "text-gray-500"}`}
+                        className={`text-sm font-medium ${executableVol > 0 ? "text-green-400" : "text-gray-500"}`}
                       >
-                        +$
-                        {potentialProfit.toLocaleString(undefined, {
+                        {potentialProfit >= 0 ? "+$" : "-$"}
+                        {Math.abs(potentialProfit).toLocaleString(undefined, {
                           maximumFractionDigits: 2,
                           minimumFractionDigits: 2,
                         })}

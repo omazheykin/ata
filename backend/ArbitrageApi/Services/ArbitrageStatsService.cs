@@ -149,7 +149,7 @@ public class ArbitrageStatsService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
 
-        var metrics = await dbContext.AggregatedMetrics.ToListAsync();
+        var metrics = await dbContext.AggregatedMetrics.AsNoTracking().ToListAsync();
         var response = new StatsResponse();
 
         if (!metrics.Any()) return response;
@@ -198,13 +198,14 @@ public class ArbitrageStatsService : BackgroundService
         }
         else
         {
-            _logger.LogWarning("⚠️ Direction metrics missing in aggregation. Consider re-bootstrap.");
+           // _logger.LogWarning("⚠️ Direction metrics missing in aggregation. Consider re-bootstrap.");
         }
 
         // 5. Avg Series Duration
         var latestEvents = await dbContext.ArbitrageEvents
+            .AsNoTracking()
             .OrderByDescending(e => e.Timestamp)
-            .Take(1000)
+            .Take(500)
             .ToListAsync();
 
         if (latestEvents.Any())
