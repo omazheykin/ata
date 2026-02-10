@@ -1,5 +1,6 @@
 import type { ArbitrageEvent, HeatmapCell } from "../types/types";
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { excelService } from "../services/excelService";
 import { apiService } from "../services/apiService";
 
@@ -45,13 +46,13 @@ const HeatmapCellModal: React.FC<HeatmapCellModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="glass rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col border border-white/10 shadow-2xl"
+        className="glass rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col border border-white/10 shadow-2xl relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -210,7 +211,8 @@ const HeatmapCellModal: React.FC<HeatmapCellModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
