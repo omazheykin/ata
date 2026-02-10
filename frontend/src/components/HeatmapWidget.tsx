@@ -7,7 +7,15 @@ import type {
 } from "../types/types";
 import HeatmapCellModal from "./HeatmapCellModal";
 
-const HeatmapWidget: React.FC = () => {
+interface HeatmapWidgetProps {
+  externalStats?: StatsResponse | null;
+  externalLoading?: boolean;
+}
+
+const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
+  externalStats,
+  externalLoading,
+}) => {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [isHeatmapModalOpen, setIsHeatmapModalOpen] = useState(false);
@@ -18,7 +26,22 @@ const HeatmapWidget: React.FC = () => {
     summary?: HeatmapCell;
   } | null>(null);
 
+  // Sync with external props if provided
+  useEffect(() => {
+    if (externalStats !== undefined) {
+      setStats(externalStats);
+    }
+  }, [externalStats]);
+
+  useEffect(() => {
+    if (externalLoading !== undefined) {
+      setLoading(externalLoading);
+    }
+  }, [externalLoading]);
+
   const fetchStats = async () => {
+    // Only fetch if not managed externally
+    if (externalStats !== undefined) return;
     try {
       setLoading(true);
       const data = await apiService.getDetailedStats();
@@ -37,12 +60,17 @@ const HeatmapWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleHeatmapCellClick = async (day: string, hour: number) => {
+  const handleHeatmapCellClick = async (
+    displayDay: string,
+    displayHour: number,
+    utcDay: string,
+    utcHour: number,
+  ) => {
     try {
-      const details = await apiService.getCellDetails(day, hour);
+      const details = await apiService.getCellDetails(utcDay, utcHour);
       setSelectedHeatmapCell({
-        day,
-        hour,
+        day: displayDay,
+        hour: displayHour,
         events: details.events,
         summary: details.summary,
       });
@@ -63,6 +91,55 @@ const HeatmapWidget: React.FC = () => {
     i.toString().padStart(2, "0"),
   );
 
+  const [manualOffset, setManualOffset] = useState<number>(() => {
+    const saved = localStorage.getItem("heatmap_tz_offset");
+    return saved ? parseInt(saved) : 0;
+  });
+
+  const [localCalendar, setLocalCalendar] = useState<
+    Record<string, Record<string, any>>
+  >({});
+
+  useEffect(() => {
+    localStorage.setItem("heatmap_tz_offset", manualOffset.toString());
+  }, [manualOffset]);
+
+  useEffect(() => {
+    if (!stats?.calendar) return;
+
+    const newCal: any = {};
+    const daysArr = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const dayNamesShort = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    dayNamesShort.forEach((localDay) => {
+      newCal[localDay] = {};
+      for (let h = 0; h < 24; h++) {
+        const hStr = h.toString().padStart(2, "0");
+
+        const date = new Date();
+        const localDayIndex = daysArr.indexOf(localDay);
+        const daysToShift = (localDayIndex - date.getDay() + 7) % 7;
+        date.setDate(date.getDate() + daysToShift);
+
+        // Manual Shift
+        date.setHours(h - manualOffset, 0, 0, 0);
+
+        const utcDay = daysArr[date.getUTCDay()].substring(0, 3);
+        const utcHour = date.getUTCHours();
+        const utcHourStr = utcHour.toString().padStart(2, "0");
+
+        const detail = stats?.calendar?.[utcDay]?.[utcHourStr];
+
+        newCal[localDay][hStr] = {
+          detail,
+          utcDay,
+          utcHour,
+        };
+      }
+    });
+    setLocalCalendar(newCal);
+  }, [stats, manualOffset]);
+
   if (loading && !stats) {
     return (
       <div className="glass rounded-xl p-6 h-full flex items-center justify-center border border-white/5">
@@ -73,14 +150,37 @@ const HeatmapWidget: React.FC = () => {
 
   if (!stats) return null;
 
-  const { calendar } = stats;
-
   return (
     <div className="glass rounded-xl p-6 border border-white/5 h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-          <span>📅</span> Calendar View
-        </h3>
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <span>📅</span> Calendar View
+          </h3>
+
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-lg border border-white/10">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+              TZ Offset
+            </span>
+            <select
+              value={manualOffset}
+              onChange={(e) => setManualOffset(parseInt(e.target.value))}
+              className="bg-transparent text-blue-400 text-xs font-bold focus:outline-none cursor-pointer"
+            >
+              {[...Array(27)]
+                .map((_, i) => i - 12)
+                .map((off) => (
+                  <option
+                    key={off}
+                    value={off}
+                    className="bg-[#0f172a] text-white"
+                  >
+                    {off >= 0 ? `+${off}` : off}h
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
         <button
           onClick={fetchStats}
           className="p-1.5 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
@@ -106,40 +206,49 @@ const HeatmapWidget: React.FC = () => {
         <div className="min-w-[300px]">
           {/* Header Row */}
           <div className="flex mb-1">
-            <div className="w-8"></div>
-            {hours
-              .filter((_, i) => i % 4 === 0)
-              .map((h) => (
-                <div
-                  key={h}
-                  className="flex-1 text-[9px] text-gray-500 text-center"
-                >
-                  {h}
-                </div>
-              ))}
+            <div className="w-10 flex-none"></div>
+            {hours.map((h) => (
+              <div
+                key={h}
+                className="flex-1 text-[8px] text-gray-500 text-center mx-[1px]"
+              >
+                {h}
+              </div>
+            ))}
           </div>
 
           {/* Rows */}
           {days.map((day) => (
             <div key={day} className="flex mb-[2px]">
-              <div className="w-8 text-[10px] text-gray-500 font-medium flex items-center">
+              <div className="w-10 flex-none text-[10px] text-gray-500 font-bold flex items-center">
                 {day}
               </div>
               {hours.map((h) => {
-                const detail = calendar[day]?.[h];
+                const cell = localCalendar[day]?.[h];
+                const detail = cell?.detail;
+                const utcDay = cell?.utcDay;
+                const utcHour = cell?.utcHour;
+
                 const now = new Date();
+                // Shift "now" by manual offset to match wall clock
+                const shiftedNow = new Date(
+                  now.getTime() + manualOffset * 3600000,
+                );
+
                 const isCurrentDay =
                   ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                    now.getDay()
+                    shiftedNow.getDay()
                   ] === day;
                 const isCurrentHour =
-                  now.getHours().toString().padStart(2, "0") === h;
+                  shiftedNow.getHours().toString().padStart(2, "0") === h;
                 const isNow = isCurrentDay && isCurrentHour;
 
                 return (
                   <div
                     key={h}
-                    onClick={() => handleHeatmapCellClick(day, parseInt(h))}
+                    onClick={() =>
+                      handleHeatmapCellClick(day, parseInt(h), utcDay, utcHour)
+                    }
                     className={`flex-1 h-6 m-[1px] rounded-sm cursor-pointer transition-all ${
                       detail
                         ? getVolatilityColor(detail.volatilityScore)
@@ -157,11 +266,13 @@ const HeatmapWidget: React.FC = () => {
                             detail.maxSpread * 100
                           ).toFixed(
                             3,
-                          )}%\nFrequency: ${detail.avgOpportunitiesPerHour.toFixed(1)} opps/hr\nVolatility: ${(
+                          )}%\nFrequency: ${detail.avgOpportunitiesPerHour.toFixed(
+                            1,
+                          )} opps/hr\nVolatility: ${(
                             detail.volatilityScore * 100
-                          ).toFixed(
-                            0,
-                          )}%\nClick to view ${detail.count} events${isNow ? " (CURRENT)" : ""}`
+                          ).toFixed(0)}%\nClick to view ${detail.count} events${
+                            isNow ? " (CURRENT)" : ""
+                          }`
                         : `No activity${isNow ? " (CURRENT)" : ""}`
                     }
                   >
@@ -178,19 +289,28 @@ const HeatmapWidget: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-4 flex gap-4 text-[10px] justify-center text-gray-400">
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-green-500/40 rounded-sm"></div> Low
+      <div className="mt-4 flex gap-6 text-xs justify-center">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-white/5 border border-white/10 rounded-sm"></div>
+          <span className="text-gray-400 font-medium">Inactive</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-yellow-500/40 rounded-sm"></div> Mod
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-green-500/40 border border-green-500/30 rounded-sm"></div>
+          <span className="text-gray-400 font-medium">Low Activity</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-red-500/40 rounded-sm"></div> High
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-yellow-500/40 border border-yellow-500/30 rounded-sm"></div>
+          <span className="text-gray-400 font-medium">Moderate Activity</span>
         </div>
-        <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-4">
-          <div className="w-2 h-2 ring-1 ring-white ring-offset-1 ring-offset-[#0f172a] rounded-sm bg-white/20"></div>{" "}
-          Current
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-red-500/40 border border-red-500/30 rounded-sm"></div>
+          <span className="text-gray-400 font-medium">High Activity</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-6">
+          <div className="w-3 h-3 ring-2 ring-white ring-offset-2 ring-offset-[#0f172a] rounded-sm bg-white/20"></div>
+          <span className="text-gray-400 font-medium font-bold text-white">
+            Current
+          </span>
         </div>
       </div>
 

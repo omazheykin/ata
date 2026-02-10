@@ -106,4 +106,12 @@ public abstract class OKXBaseState : IOKXState
     public abstract Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
 
     public abstract Task DepositSandboxFundsAsync(string asset, decimal amount);
+
+    // Order methods
+    public abstract Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity);
+    public abstract Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity);
+    public abstract Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price);
+    public abstract Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price);
+    public abstract Task<OrderInfo> GetOrderStatusAsync(string orderId);
+    public abstract Task<bool> CancelOrderAsync(string orderId);
 }

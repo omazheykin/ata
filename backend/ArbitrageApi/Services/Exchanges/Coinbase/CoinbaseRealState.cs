@@ -122,34 +122,127 @@ public class CoinbaseRealState : CoinbaseBaseState
         }
     }
 
-    public override Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity)
+    public override async Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity)
     {
-        throw new NotImplementedException("Real order placement for Coinbase is not yet implemented.");
+        return await PlaceOrderAsync(symbol, OrderSide.Buy, OrderType.Market, quantity, null);
     }
 
-    public override Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity)
+    public override async Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity)
     {
-        throw new NotImplementedException("Real order placement for Coinbase is not yet implemented.");
+        return await PlaceOrderAsync(symbol, OrderSide.Sell, OrderType.Market, quantity, null);
     }
 
-    public override Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price)
+    public override async Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price)
     {
-        throw new NotImplementedException("Real order placement for Coinbase is not yet implemented.");
+        return await PlaceOrderAsync(symbol, OrderSide.Buy, OrderType.Limit, quantity, price);
     }
 
-    public override Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price)
+    public override async Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price)
     {
-        throw new NotImplementedException("Real order placement for Coinbase is not yet implemented.");
+        return await PlaceOrderAsync(symbol, OrderSide.Sell, OrderType.Limit, quantity, price);
     }
 
-    public override Task<OrderInfo> GetOrderStatusAsync(string orderId)
+    private async Task<OrderResponse> PlaceOrderAsync(string symbol, OrderSide side, OrderType type, decimal quantity, decimal? price)
     {
-        throw new NotImplementedException("Real order status check for Coinbase is not yet implemented.");
+        try
+        {
+            if (!SymbolMapping.TryGetValue(symbol, out var coinbaseSymbol))
+            {
+                return new OrderResponse { Status = OrderStatus.Failed, ErrorMessage = $"Symbol mapping not found for {symbol}" };
+            }
+
+            var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+            var request = new CoinbaseOrderRequest
+            {
+                ProductId = coinbaseSymbol,
+                Side = side == OrderSide.Buy ? "BUY" : "SELL",
+                OrderConfiguration = new OrderConfiguration()
+            };
+
+            if (type == OrderType.Market)
+            {
+                request.OrderConfiguration.MarketIoc = new MarketIoc { BaseSize = quantity.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+            }
+            else
+            {
+                request.OrderConfiguration.LimitGtc = new LimitGtc 
+                { 
+                    BaseSize = quantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    LimitPrice = price?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"
+                };
+            }
+
+            var response = await cats.CreateOrderAsync(request);
+
+            if (response == null || !response.Success)
+            {
+                return new OrderResponse 
+                { 
+                    Status = OrderStatus.Failed, 
+                    Symbol = symbol,
+                    Side = side,
+                    Type = type,
+                    ErrorMessage = response?.ErrorMessage ?? "Empty response from Coinbase" 
+                };
+            }
+
+            return new OrderResponse
+            {
+                OrderId = response.OrderId,
+                Symbol = symbol,
+                Side = side,
+                Type = type,
+                Status = OrderStatus.Pending, // Initial status
+                OriginalQuantity = quantity,
+                Price = price,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error placing order on Coinbase");
+            return new OrderResponse { Status = OrderStatus.Failed, ErrorMessage = ex.Message };
+        }
     }
 
-    public override Task<bool> CancelOrderAsync(string orderId)
+    public override async Task<OrderInfo> GetOrderStatusAsync(string orderId)
     {
-        throw new NotImplementedException("Real order cancellation for Coinbase is not yet implemented.");
+        var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+        var response = await cats.GetOrderAsync(orderId);
+
+        if (response?.Order == null)
+        {
+            throw new Exception($"Failed to fetch order status for {orderId}");
+        }
+
+        return new OrderInfo
+        {
+            OrderId = response.Order.OrderId,
+            Symbol = response.Order.ProductId ?? string.Empty,
+            Status = MapCoinbaseStatus(response.Order.Status),
+            OriginalQuantity = decimal.TryParse(response.Order.FilledSize, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var s) ? s : 0,
+            ExecutedQuantity = decimal.TryParse(response.Order.FilledSize, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var es) ? es : 0,
+            CreatedAt = DateTime.UtcNow // Historical API might not return this purely
+        };
+    }
+
+    public override async Task<bool> CancelOrderAsync(string orderId)
+    {
+        var cats = new CoinbaseAdvancedTradeService(ApiKey, ApiSecret, Logger);
+        return await cats.CancelOrdersAsync(new List<string> { orderId });
+    }
+
+    private OrderStatus MapCoinbaseStatus(string? status)
+    {
+        return status?.ToUpper() switch
+        {
+            "OPEN" => OrderStatus.Pending,
+            "FILLED" => OrderStatus.Filled,
+            "CANCELLED" => OrderStatus.Cancelled,
+            "EXPIRED" => OrderStatus.Cancelled,
+            "FAILED" => OrderStatus.Failed,
+            _ => OrderStatus.Failed
+        };
     }
 
     public override async System.Threading.Tasks.Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default)

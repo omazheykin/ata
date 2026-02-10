@@ -11,4 +11,12 @@ public interface IOKXState
     Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
     Task<string?> GetDepositAddressAsync(string asset, System.Threading.CancellationToken ct = default);
     Task DepositSandboxFundsAsync(string asset, decimal amount);
+    
+    // Order methods
+    Task<Models.OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity);
+    Task<Models.OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity);
+    Task<Models.OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price);
+    Task<Models.OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price);
+    Task<Models.OrderInfo> GetOrderStatusAsync(string orderId);
+    Task<bool> CancelOrderAsync(string orderId);
 }

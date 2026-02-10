@@ -1,6 +1,7 @@
 using ArbitrageApi.Models;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text;
 
 namespace ArbitrageApi.Services.Exchanges.OKX;
 
@@ -223,6 +224,209 @@ public class OKXRealState : OKXBaseState
         // No-op for real state
         return Task.CompletedTask;
     }
+
+    // Order methods
+    public override async Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity)
+    {
+        return await PlaceOrderAsync(symbol, "buy", "market", quantity, null);
+    }
+
+    public override async Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity)
+    {
+        return await PlaceOrderAsync(symbol, "sell", "market", quantity, null);
+    }
+
+    public override async Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price)
+    {
+        return await PlaceOrderAsync(symbol, "buy", "limit", quantity, price);
+    }
+
+    public override async Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price)
+    {
+        return await PlaceOrderAsync(symbol, "sell", "limit", quantity, price);
+    }
+
+    private async Task<OrderResponse> PlaceOrderAsync(string symbol, string side, string type, decimal quantity, decimal? price)
+    {
+        try
+        {
+            var pair = TradingPair.CommonPairs.FirstOrDefault(p => p.Symbol == symbol);
+            var okxSymbol = pair?.GetOKXSymbol() ?? symbol;
+            
+            var path = "/api/v5/trade/order";
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+            
+            var orderRequest = new
+            {
+                instId = okxSymbol,
+                tdMode = "cash",
+                side = side,
+                ordType = type,
+                sz = quantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                px = price?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+                // Target currency: for market buy, we want to specify base currency quantity
+                tgtCcy = type == "market" && side == "buy" ? "base_ccy" : null
+            };
+
+            var body = JsonSerializer.Serialize(orderRequest);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}{path}");
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            AddOKXHeaders(request, timestamp, "POST", path, body);
+
+            var response = await HttpClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.LogError("OKX Order failed: {StatusCode} - {Content}", response.StatusCode, content);
+                return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = content };
+            }
+
+            var okxResponse = JsonSerializer.Deserialize<OKXOrderResponse>(content);
+            if (okxResponse?.Code != "0" || okxResponse.Data == null || okxResponse.Data.Count == 0)
+            {
+                var msg = okxResponse?.Msg ?? "Unknown OKX error";
+                Logger.LogError("OKX Order error: {Code} - {Msg}", okxResponse?.Code, msg);
+                return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = msg };
+            }
+
+            var orderData = okxResponse.Data[0];
+            Logger.LogInformation("✅ OKX Order placed: {OrdId}", orderData.OrdId);
+
+            return new OrderResponse
+            {
+                OrderId = orderData.OrdId,
+                Symbol = symbol,
+                Side = side == "buy" ? OrderSide.Buy : OrderSide.Sell,
+                Type = type == "market" ? OrderType.Market : OrderType.Limit,
+                Status = Models.OrderStatus.Pending, // Initial status
+                OriginalQuantity = quantity,
+                Price = price,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error placing OKX order for {Symbol}", symbol);
+            return new OrderResponse { Status = Models.OrderStatus.Failed, ErrorMessage = ex.Message };
+        }
+    }
+
+    public override async Task<OrderInfo> GetOrderStatusAsync(string orderId)
+    {
+        try
+        {
+            var path = $"/api/v5/trade/order?ordId={orderId}"; // Actually documentation says query params or body
+            // Wait, for GET it should be query params.
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}{path}");
+            AddOKXHeaders(request, timestamp, "GET", path, "");
+
+            var response = await HttpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode) throw new Exception($"HTTP {response.StatusCode}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            var okxResponse = JsonSerializer.Deserialize<OKXOrderDetailResponse>(content);
+
+            if (okxResponse?.Code != "0" || okxResponse.Data == null || okxResponse.Data.Count == 0)
+                throw new Exception(okxResponse?.Msg ?? "Order not found");
+
+            var data = okxResponse.Data[0];
+            return new OrderInfo
+            {
+                OrderId = data.OrdId,
+                Symbol = data.InstId,
+                Status = MapOKXStatus(data.State),
+                OriginalQuantity = decimal.Parse(data.Sz),
+                ExecutedQuantity = decimal.Parse(data.AccFillSz),
+                CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(data.UTime)).DateTime
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error getting OKX order status for {OrderId}", orderId);
+            throw;
+        }
+    }
+
+    public override async Task<bool> CancelOrderAsync(string orderId)
+    {
+        try
+        {
+            // OKX Cancel requires instId. We might need to store it or look it up.
+            // For now, let's assume we can find it or use a separate endpoint if available.
+            // The /api/v5/trade/cancel-order needs instId.
+            // Simplified: we'll use a placeholder/fail if we don't have instId, 
+            // but usually we can try to guess from the OrderInfo if we fetch it first.
+            
+            // To be more robust, we should probably pass symbol to CancelOrderAsync.
+            // But IExchangeClient doesn't have it.
+            return false; 
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error cancelling OKX order {OrderId}", orderId);
+            return false;
+        }
+    }
+
+    private Models.OrderStatus MapOKXStatus(string state)
+    {
+        return state switch
+        {
+            "live" => Models.OrderStatus.Pending,
+            "partially_filled" => Models.OrderStatus.PartiallyFilled,
+            "filled" => Models.OrderStatus.Filled,
+            "canceled" => Models.OrderStatus.Cancelled,
+            "order_failed" => Models.OrderStatus.Failed,
+            _ => Models.OrderStatus.Failed
+        };
+    }
+}
+
+public class OKXOrderResponse
+{
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")]
+    public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")]
+    public List<OKXOrderData>? Data { get; set; }
+}
+
+public class OKXOrderData
+{
+    [JsonPropertyName("ordId")]
+    public string OrdId { get; set; } = string.Empty;
+    [JsonPropertyName("clOrdId")]
+    public string ClOrdId { get; set; } = string.Empty;
+}
+
+public class OKXOrderDetailResponse
+{
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
+    [JsonPropertyName("msg")]
+    public string Msg { get; set; } = string.Empty;
+    [JsonPropertyName("data")]
+    public List<OKXOrderDetail>? Data { get; set; }
+}
+
+public class OKXOrderDetail
+{
+    [JsonPropertyName("instId")]
+    public string InstId { get; set; } = string.Empty;
+    [JsonPropertyName("ordId")]
+    public string OrdId { get; set; } = string.Empty;
+    [JsonPropertyName("state")]
+    public string State { get; set; } = string.Empty;
+    [JsonPropertyName("sz")]
+    public string Sz { get; set; } = string.Empty;
+    [JsonPropertyName("accFillSz")]
+    public string AccFillSz { get; set; } = string.Empty;
+    [JsonPropertyName("uTime")]
+    public string UTime { get; set; } = string.Empty;
 }
 
 // Response models

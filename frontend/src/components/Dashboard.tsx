@@ -6,13 +6,13 @@ import type {
   Transaction,
   StrategyUpdate,
   MarketPriceUpdate,
+  StatsResponse,
+  ArbitrageEvent,
 } from "../types/types";
 import { signalRService } from "../services/signalRService";
 import { apiService } from "../services/apiService";
 import OpportunityCard from "./OpportunityCard";
 import StatsPanel from "./StatsPanel";
-// import ProfitChart from "./ProfitChart";
-// import ProfitScatterChart from "./ProfitScatterChart";
 import PriceComparisonChart from "./PriceComparisonChart";
 import ProfitPanel from "./ProfitPanel";
 import OpportunityList from "./OpportunityList";
@@ -21,23 +21,20 @@ import DepositModal from "./DepositModal";
 import ConnectionLostModal from "./ConnectionLostModal";
 import HeatmapWidget from "./HeatmapWidget";
 import SettingsView from "./SettingsView";
+import RebalancingPanel from "./RebalancingPanel";
+import EventsModal from "./EventsModal";
+import ConnectionStatus from "./ConnectionStatus";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 interface DashboardProps {
   connectionState: HubConnectionState | null;
-  activeView: "live" | "stats";
-  onViewChange: (view: "live" | "stats") => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({
-  connectionState,
-  activeView,
-  onViewChange,
-}) => {
+const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
   const [hasAttemptedInitially, setHasAttemptedInitially] = useState(false);
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>(
     [],
   );
-  const [newOpportunityId, setNewOpportunityId] = useState<string | null>(null);
   const [selectedOpportunity, setSelectedOpportunity] =
     useState<ArbitrageOpportunity | null>(null);
   /* Temporarily removed
@@ -49,6 +46,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     Record<string, MarketPriceUpdate>
   >({});
   const [lastUpdatedAsset, setLastUpdatedAsset] = useState<string | null>(null);
+  const [isLeftPanelExpanded, setIsLeftPanelExpanded] = useState(true);
 
   // Balance state
   const [balances, setBalances] = useState<Record<string, Balance[]>>({});
@@ -57,7 +55,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [selectedExchangeForDeposit, setSelectedExchangeForDeposit] =
     useState<string>("Binance");
-  const [filterText, setFilterText] = useState<string>("");
 
   // Auto-Trade & Transactions state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -74,6 +71,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [manualValue, setManualValue] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [useTakerFees, setUseTakerFees] = useState(true);
+
+  // Full Stats State (merged from StatsView)
+  const [detailedStats, setDetailedStats] = useState<StatsResponse | null>(
+    null,
+  );
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [selectedPair, setSelectedPair] = useState<string | null>(null);
+  const [pairEvents, setPairEvents] = useState<ArbitrageEvent[]>([]);
+  const [isEventsModalOpen, setIsEventsModalOpen] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
 
   const fetchBalances = async () => {
     try {
@@ -116,6 +123,34 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const fetchStats = async () => {
+    try {
+      setLoadingStats(true);
+      const data = await apiService.getDetailedStats();
+      const smartStatus = await apiService.getSmartStrategy();
+      setDetailedStats(data);
+      setIsSmartStrategy(smartStatus.enabled);
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const fetchEvents = async (pair: string) => {
+    try {
+      setLoadingEvents(true);
+      setSelectedPair(pair);
+      setIsEventsModalOpen(true);
+      const events = await apiService.getEventsByPair(pair);
+      setPairEvents(events);
+    } catch (err) {
+      console.error("Error fetching events:", err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
   const fetchAutoTradeStatus = async () => {
     try {
       const status = await apiService.getAutoTradeStatus();
@@ -140,6 +175,23 @@ const Dashboard: React.FC<DashboardProps> = ({
       setExecutionStrategy(data.strategy);
     } catch (err) {
       console.error("Error fetching execution strategy:", err);
+    }
+  };
+
+  const handleToggleSmartStrategy = async () => {
+    try {
+      const newStatus = !isSmartStrategy;
+      await apiService.toggleSmartStrategy(newStatus);
+      setIsSmartStrategy(newStatus);
+
+      // If we turned it off, fetch the manual status to show the right threshold
+      if (!newStatus) {
+        const manualStatus = await apiService.getStrategyStatus();
+        setStrategyUpdate(manualStatus);
+        setManualValue(manualStatus.threshold.toFixed(2));
+      }
+    } catch (err) {
+      console.error("Error toggling smart strategy:", err);
     }
   };
 
@@ -227,6 +279,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     fetchSandboxStatus();
     fetchExecutionStrategy();
     fetchFullState();
+    fetchStats();
 
     // Fetch initial smart strategy status
     apiService
@@ -273,9 +326,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               // Keep only last 100 opportunities in memory
               return updated.slice(-100);
             });
-            setNewOpportunityId(opportunity.id);
+            // setNewOpportunityId(opportunity.id);
             // Clear the "new" indicator after 2 seconds
-            setTimeout(() => setNewOpportunityId(null), 2000);
+            // setTimeout(() => setNewOpportunityId(null), 2000);
           }
         });
 
@@ -355,7 +408,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
   }, []);
 
-  const stats = {
+  const summaryStats = {
     totalOpportunities: opportunities.length,
     averageProfit:
       opportunities.length > 0
@@ -396,172 +449,161 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [selectedOpportunity, marketPrices, lastUpdatedAsset]);
 
   return (
-    <div className="flex gap-4">
-      {/* Left Panel - Balances */}
-      <div className="hidden lg:flex flex-col gap-4 w-80 sticky top-24 h-[calc(100vh-8rem)]">
-        <div className="flex-1 min-h-0">
-          <BalancesPanel
-            balances={balances}
-            transactions={transactions}
-            isAutoTradeEnabled={isAutoTradeEnabled}
-            loading={loadingBalances}
-            error={balanceError}
-            onRefresh={fetchBalances}
-            onOpenDeposit={(ex) => {
-              setSelectedExchangeForDeposit(ex);
-              setIsDepositModalOpen(true);
-            }}
-            onToggleAutoTrade={handleToggleAutoTrade}
-            isSandboxMode={isSandboxMode}
-            onToggleSandbox={handleToggleSandbox}
-            executionStrategy={executionStrategy}
-            onToggleStrategy={handleToggleStrategy}
-            useTakerFees={useTakerFees}
-            onToggleFeeMode={handleToggleFeeMode}
-            onShowFeeHelp={() => setShowFeeModeHelp(true)}
-          />
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 min-w-0">
-        {/* Price Comparison & Stats Summary */}
-        <div className="mb-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <PriceComparisonChart data={priceChartData} />
-          <StatsPanel
-            totalOpportunities={stats.totalOpportunities}
-            averageProfit={stats.averageProfit}
-            bestProfit={stats.bestProfit}
-            totalVolume={stats.totalVolume}
-          />
-        </div>
-
-        {/* Chart Section - Temporarily removed per user request
-        {opportunities.length > 0 && (
-          <div className="mb-6">
-            <div className="flex justify-end mb-2 gap-2">
-              <button
-                onClick={() => setActiveChart("trend")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  activeChart === "trend"
-                    ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                    : "bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10"
-                }`}
-              >
-                📈 Trend
-              </button>
-              <button
-                onClick={() => setActiveChart("scatter")}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  activeChart === "scatter"
-                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                    : "bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10"
-                }`}
-              >
-                💎 Value
-              </button>
-            </div>
-            {activeChart === "trend" ? (
-              <ProfitChart
-                opportunities={opportunities}
-                threshold={strategyUpdate?.threshold}
-              />
-            ) : (
-              <ProfitScatterChart opportunities={opportunities} />
-            )}
+    <div className="flex flex-col gap-4 animate-fade-in max-w-[1600px] mx-auto h-screen p-4 overflow-hidden">
+      {/* High-Density Header: Branding + Global Controls */}
+      <div className="glass rounded-2xl p-4 flex flex-wrap items-center justify-between gap-6 border border-white/10 shadow-2xl overflow-hidden flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-3xl shadow-lg">
+            🤖
           </div>
-        )} */}
-
-        {/* Opportunities Header & strategy toggle */}
-        <div className="mb-4 flex justify-between items-center gap-4">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              <span className="text-3xl">⚡</span>
-              <span className="text-2xl font-bold text-white">Dashboard</span>
+          <div>
+            <h1 className="text-2xl font-black gradient-text leading-tight tracking-tighter">
+              Antigravity
+            </h1>
+            <div className="flex items-center gap-2 leading-none">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-[10px] text-gray-500 uppercase tracking-widest font-black">
+                Terminal • L2 High-Freq
+              </span>
             </div>
+          </div>
+        </div>
 
-            {/* Monitor Screen Toggle */}
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Main Controls Group */}
+          <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
+            {/* Auto-Trade */}
+            <div className="flex items-center gap-2" title="Global Auto-Trade">
+              <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">
+                Auto
+              </span>
               <button
-                onClick={() => onViewChange("live")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 flex items-center gap-2 ${
-                  activeView === "live"
-                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                }`}
+                onClick={() => handleToggleAutoTrade(!isAutoTradeEnabled)}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${isAutoTradeEnabled ? "bg-primary-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]" : "bg-white/10"}`}
               >
-                <span>⚡</span> Live
-              </button>
-              <button
-                onClick={() => onViewChange("stats")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 flex items-center gap-2 ${
-                  activeView === "stats"
-                    ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                <span>📊</span> Stats
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${isAutoTradeEnabled ? "translate-x-5" : "translate-x-1"}`}
+                />
               </button>
             </div>
 
-            {/* View Switcher - MOVED BEFORE THRESHOLD */}
-            <div className="flex items-center gap-2 glass rounded-xl p-1 border border-white/5">
+            <div className="w-px h-4 bg-white/10"></div>
+
+            {/* Sandbox */}
+            <div
+              className="flex items-center gap-2"
+              title="Sandbox Mode (Simulated Trades)"
+            >
+              <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">
+                Sandbox
+              </span>
               <button
-                onClick={() => setViewMode("card")}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === "card"
-                    ? "bg-white/10 text-white"
-                    : "text-gray-500 hover:text-gray-300"
-                }`}
-                title="Card View"
+                onClick={() => handleToggleSandbox(!isSandboxMode)}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${isSandboxMode ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]" : "bg-white/10"}`}
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${isSandboxMode ? "translate-x-5" : "translate-x-1"}`}
+                />
+              </button>
+            </div>
+
+            <div className="w-px h-4 bg-white/10"></div>
+
+            {/* Strategy Select */}
+            <div className="flex items-center gap-2" title="Execution Strategy">
+              <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">
+                {executionStrategy}
+              </span>
+              <button
+                onClick={handleToggleStrategy}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${executionStrategy === "Concurrent" ? "bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.3)]" : "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]"}`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${executionStrategy === "Sequential" ? "translate-x-5" : "translate-x-1"}`}
+                />
+              </button>
+            </div>
+
+            <div className="w-px h-4 bg-white/10"></div>
+
+            {/* Fee Mode */}
+            <div
+              className="flex items-center gap-2"
+              title={`Fee Mode: ${useTakerFees ? "Taker" : "Maker"}`}
+            >
+              <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">
+                {useTakerFees ? "Taker" : "Maker"}
+              </span>
+              <button
+                onClick={() => handleToggleFeeMode(!useTakerFees)}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${useTakerFees ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.3)]"}`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${useTakerFees ? "translate-x-5" : "translate-x-1"}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Strategy Threshold Group */}
+          <div className="flex items-center gap-4 bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-gray-500 font-black uppercase">
+                Threshold
+              </span>
+              <div className="flex items-center gap-1 group relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={strategyUpdate?.threshold ?? 0.1}
+                  onChange={(e) =>
+                    setStrategyUpdate((prev) =>
+                      prev
+                        ? { ...prev, threshold: parseFloat(e.target.value) }
+                        : null,
+                    )
+                  }
+                  className="w-14 bg-black/40 border border-white/10 rounded px-2 py-0.5 text-xs font-bold text-blue-400 focus:outline-none focus:border-blue-500 transition-all font-mono"
+                />
+                <button
+                  onClick={handleUpdateManualThreshold}
+                  className="p-1 hover:text-blue-400 transition-colors text-xs"
+                  title="Apply Manual"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-                  />
-                </svg>
-              </button>
-              <button
-                onClick={() => setViewMode("list")}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === "list"
-                    ? "bg-white/10 text-white"
-                    : "text-gray-500 hover:text-gray-300"
-                }`}
-                title="List View"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              </button>
+                  💾
+                </button>
+              </div>
             </div>
 
-            {/* Settings Button */}
+            <div className="w-px h-4 bg-white/10"></div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] text-gray-500 font-black uppercase">
+                Smart
+              </span>
+              <button
+                onClick={handleToggleSmartStrategy}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${
+                  isSmartStrategy
+                    ? "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                    : "bg-white/10"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${isSmartStrategy ? "translate-x-5" : "translate-x-1"}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-all group"
-              title="Safety Settings"
+              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all group"
+              title="Settings"
             >
               <svg
-                className="w-5 h-5 group-hover:rotate-45 transition-transform duration-500"
+                className="w-5 h-5 group-hover:rotate-45 transition-transform"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -580,425 +622,322 @@ const Dashboard: React.FC<DashboardProps> = ({
                 />
               </svg>
             </button>
-
-            {/* Threshold Indicator - GENEROUS SPACING */}
-            <div className="flex items-center gap-4 glass rounded-xl px-5 py-2.5 border border-white/10 flex-1 min-w-0 max-w-2xl">
-              <div className="flex flex-col items-end min-w-[200px]">
-                <span className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1.5 opacity-80">
-                  Profit Threshold
-                </span>
-                <div className="flex items-center gap-2">
-                  {!isSmartStrategy ? (
-                    <div className="flex items-center gap-2 p-1.5 bg-white/5 rounded-lg border border-white/10 focus-within:border-blue-500/50 transition-all w-full group">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={manualValue}
-                        onChange={(e) => setManualValue(e.target.value)}
-                        className="bg-transparent px-2 py-0.5 text-sm font-bold text-blue-400 w-16 outline-none"
-                      />
-                      <button
-                        onClick={handleUpdateManualThreshold}
-                        className="px-3 py-1.5 bg-blue-500 text-white text-[10px] font-black rounded-md hover:bg-blue-600 active:scale-95 transition-all whitespace-nowrap shadow-lg shadow-blue-500/20"
-                      >
-                        SET
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className={`text-sm font-bold ${isSmartStrategy ? "text-purple-400" : "text-blue-400"}`}
-                    >
-                      {strategyUpdate
-                        ? strategyUpdate.threshold.toFixed(2)
-                        : "0.10"}
-                      %
-                    </span>
-                  )}
-                  {isSmartStrategy && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-[9px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-tight">
-                        Smart
-                      </span>
-                      <button
-                        onClick={() => setShowThresholdHelp(true)}
-                        className="text-purple-400/60 hover:text-purple-400 transition-colors"
-                        title="How thresholds work"
-                      >
-                        <svg
-                          className="w-3 h-3"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {strategyUpdate?.reason && (
-                <div className="h-6 w-px bg-white/10 hidden sm:block flex-shrink-0"></div>
-              )}
-              {strategyUpdate?.reason && (
-                <span
-                  className="text-xs text-gray-500 italic hidden sm:block truncate flex-1 min-w-0"
-                  title={strategyUpdate.reason}
-                >
-                  {strategyUpdate.reason}
-                </span>
-              )}
-            </div>
+            <ConnectionStatus connectionState={connectionState} />
           </div>
-          <div className="flex items-center">
-            <input
-              type="text"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Filter assets..."
-              className="glass rounded-xl p-2 px-4 border border-white/5 text-sm"
+        </div>
+      </div>
+
+      {/* Unified Terminal Grid */}
+      {/* Unified Terminal Main Container */}
+      <div className="flex gap-4 h-[calc(100vh-120px)] min-h-[800px]">
+        {/* Left Col: Balances & Controls - Expandable */}
+        <div
+          className={`flex-shrink-0 transition-all duration-300 ease-in-out ${
+            isLeftPanelExpanded ? "w-80" : "w-16"
+          }`}
+        >
+          <div className="h-full glass rounded-xl border border-white/5 overflow-hidden flex flex-col relative">
+            <button
+              onClick={() => setIsLeftPanelExpanded(!isLeftPanelExpanded)}
+              className="absolute top-2 -right-3 z-50 bg-blue-500 text-white p-1 rounded-full shadow-lg hover:scale-110 transition-transform"
+              title={
+                isLeftPanelExpanded ? "Collapse Sidebar" : "Expand Sidebar"
+              }
+            >
+              <span className="text-[10px]">
+                {isLeftPanelExpanded ? "◀" : "▶"}
+              </span>
+            </button>
+            <BalancesPanel
+              isExpanded={isLeftPanelExpanded}
+              balances={balances}
+              transactions={transactions}
+              isAutoTradeEnabled={isAutoTradeEnabled}
+              loading={loadingBalances}
+              error={balanceError}
+              onRefresh={fetchBalances}
+              onOpenDeposit={(ex) => {
+                setSelectedExchangeForDeposit(ex);
+                setIsDepositModalOpen(true);
+              }}
             />
           </div>
         </div>
 
-        {opportunities.length === 0 ? (
-          <div className="glass rounded-xl p-12 text-center mb-6">
-            <div className="text-6xl mb-4">🔍</div>
-            <p className="text-xl text-gray-400">
-              Waiting for arbitrage opportunities...
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              {connectionState === HubConnectionState.Connected
-                ? "Connected and monitoring exchanges"
-                : "Connecting to server..."}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
-            <div className="xl:col-span-2 min-w-0">
-              {viewMode === "list" ? (
-                <OpportunityList
-                  opportunities={
-                    filterText?.length > 0
-                      ? opportunities.filter((opportunity) =>
-                          opportunity.asset
-                            .toLowerCase()
-                            .includes(filterText.toLowerCase()),
-                        )
-                      : opportunities
-                  }
-                  onSelect={setSelectedOpportunity}
-                  selectedId={selectedOpportunity?.id}
-                  threshold={strategyUpdate?.threshold ?? 0.1}
-                  balances={balances}
-                />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {
-                    // add filtering here
-                    (filterText?.length > 0
-                      ? opportunities.filter((opportunity) =>
-                          opportunity.asset
-                            .toLowerCase()
-                            .includes(filterText.toLowerCase()),
-                        )
-                      : opportunities
-                    )
-                      .slice()
-                      .reverse()
-                      .slice(0, 12)
-                      .map((opportunity) => (
-                        <OpportunityCard
-                          key={opportunity.id}
-                          opportunity={opportunity}
-                          isNew={opportunity.id === newOpportunityId}
-                          onClick={() => setSelectedOpportunity(opportunity)}
-                        />
-                      ))
-                  }
+        {/* Dynamic Center & Right Columns */}
+        <div className="flex-1 flex flex-col gap-4 min-w-0">
+          {/* Top Row: Standardized Height (500px) */}
+          <div className="grid grid-cols-12 gap-4 h-[500px]">
+            {/* Center Col: Insights & Monitor */}
+            <div className="col-span-12 lg:col-span-8 flex flex-col gap-4 min-w-0">
+              <div className="grid grid-cols-2 gap-4 h-[140px] flex-shrink-0">
+                <div className="glass rounded-xl border border-white/5 p-3 overflow-hidden">
+                  <StatsPanel
+                    totalOpportunities={summaryStats.totalOpportunities}
+                    averageProfit={summaryStats.averageProfit}
+                    bestProfit={summaryStats.bestProfit}
+                    totalVolume={summaryStats.totalVolume}
+                    volatilityScore={
+                      detailedStats?.summary.globalVolatilityScore
+                    }
+                    efficiencyScore={detailedStats?.rebalancing.efficiencyScore}
+                  />
                 </div>
-              )}
+                <div className="glass rounded-xl border border-white/5 p-3 overflow-hidden flex flex-col">
+                  {priceChartData ? (
+                    <PriceComparisonChart data={priceChartData} />
+                  ) : (
+                    detailedStats && (
+                      <div className="flex-1 animate-fade-in">
+                        <RebalancingPanel
+                          rebalancing={detailedStats.rebalancing}
+                        />
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 flex-1 min-h-0">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <h3 className="text-md font-bold text-white flex items-center gap-2">
+                    <span className="text-blue-400">⚡</span> Live Monitor
+                  </h3>
+                  <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/5">
+                    <button
+                      onClick={() => setViewMode("card")}
+                      className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
+                        viewMode === "card"
+                          ? "bg-white/10 text-white"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setViewMode("list")}
+                      className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
+                        viewMode === "list"
+                          ? "bg-white/10 text-white"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      List
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
+                  {opportunities.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-20">
+                      <div className="text-4xl mb-4 animate-bounce">🛰️</div>
+                      <p className="text-sm italic uppercase tracking-widest font-black">
+                        Syncing Stream...
+                      </p>
+                    </div>
+                  ) : viewMode === "list" ? (
+                    <div className="scale-[0.98] origin-top">
+                      <OpportunityList
+                        opportunities={opportunities}
+                        onSelect={setSelectedOpportunity}
+                        selectedId={selectedOpportunity?.id}
+                        threshold={strategyUpdate?.threshold ?? 0.1}
+                        balances={balances}
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-4">
+                      {opportunities
+                        .slice()
+                        .reverse()
+                        .slice(0, 8)
+                        .map((o) => (
+                          <div
+                            className="scale-[0.98] transition-transform hover:scale-100"
+                            key={o.id}
+                          >
+                            <OpportunityCard
+                              opportunity={o}
+                              onClick={() => setSelectedOpportunity(o)}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Calendar Widget */}
-            <div className="xl:col-span-1 h-full min-h-[400px]">
-              <HeatmapWidget />
+            {/* Right Col: Asset Stats & Heatmap (Top Row) */}
+            <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 min-w-0">
+              <div className="flex-1 glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 min-h-0">
+                <h3 className="text-md font-bold text-white flex items-center gap-2">
+                  <span className="text-purple-400">📊</span> Pair Activity
+                </h3>
+                <div className="flex-1 overflow-y-auto pr-1 font-mono">
+                  <table className="w-full text-[11px]">
+                    <thead className="sticky top-0 bg-[#020617] z-10">
+                      <tr className="text-gray-500 font-black uppercase border-b border-white/5">
+                        <th className="pb-1 text-left">Pair</th>
+                        <th className="pb-1 text-right">Opps</th>
+                        <th className="pb-1 text-right">Spread</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(detailedStats?.summary.pairs || {}).map(
+                        ([name, data]) => (
+                          <tr
+                            key={name}
+                            onClick={() => fetchEvents(name)}
+                            className="border-b border-white/5 last:border-0 hover:bg-white/5 cursor-pointer group"
+                          >
+                            <td className="py-1 font-bold group-hover:text-blue-400 transition-colors">
+                              {name}
+                            </td>
+                            <td className="py-1 text-right text-gray-400">
+                              {data.count}
+                            </td>
+                            <td className="py-1 text-right text-green-400 font-black">
+                              {(data.avgSpread * 100).toFixed(2)}%
+                            </td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Bottom Row: Standardized Height (400px) */}
+          <div className="grid grid-cols-12 gap-4 h-[350px]">
+            <div className="col-span-12 lg:col-span-8 glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 min-h-0">
+              <HeatmapWidget
+                externalStats={detailedStats}
+                externalLoading={loadingStats}
+              />
+            </div>
+
+            <div className="col-span-12 lg:col-span-4 glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 min-h-0">
+              <h3 className="text-md font-bold text-white flex items-center gap-2">
+                <span className="text-orange-400">🔁</span> Flow Distribution
+              </h3>
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={Object.entries(
+                        detailedStats?.summary.directionDistribution || {},
+                      ).map(([name, value]) => ({
+                        name: name.includes("B→C") ? "Bin→Cb" : "Cb→Bin",
+                        value,
+                      }))}
+                      innerRadius={40}
+                      outerRadius={60}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      <Cell fill="#3bb2f6" />
+                      <Cell fill="#a855f7" />
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0f172a",
+                        border: "none",
+                        borderRadius: "8px",
+                        fontSize: "10px",
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Profit Calculator Panel */}
-      <ProfitPanel
-        opportunity={selectedOpportunity}
-        balances={balances}
-        onClose={() => setSelectedOpportunity(null)}
-      />
-
-      {/* Deposit Modal */}
+      {/* Modals & Overlays */}
+      {selectedOpportunity && (
+        <ProfitPanel
+          opportunity={selectedOpportunity}
+          balances={balances}
+          onClose={() => setSelectedOpportunity(null)}
+        />
+      )}
       <DepositModal
         isOpen={isDepositModalOpen}
         onClose={() => setIsDepositModalOpen(false)}
         onSuccess={handleDepositSuccess}
         initialExchange={selectedExchangeForDeposit}
       />
-
       <SettingsView
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
+      {isEventsModalOpen && (
+        <EventsModal
+          pair={selectedPair || ""}
+          events={pairEvents}
+          isOpen={isEventsModalOpen}
+          onClose={() => setIsEventsModalOpen(false)}
+          loading={loadingEvents}
+        />
+      )}
 
-      {/* Threshold Help Modal */}
       {showThresholdHelp && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div
-            className="glass max-w-2xl w-full rounded-2xl border border-white/10 shadow-2xl animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 md:p-8">
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="text-2xl font-bold text-white">
-                    How Thresholds Work
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowThresholdHelp(false)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="glass max-w-lg w-full rounded-2xl border border-white/10 shadow-2xl p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400">
+                🛡️
               </div>
-
-              <div className="space-y-6 text-gray-300">
-                <p className="bg-blue-500/10 border-l-4 border-blue-500 p-4 rounded-r-lg italic text-blue-100/90 text-sm">
-                  "When you see 'No opportunities' while a threshold is active,
-                  it means the system is filtering out market data that doesn't
-                  meet your profit criteria."
-                </p>
-
-                <div className="grid gap-6">
-                  <section>
-                    <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                      <span className="text-blue-400">1.</span> The "Fee Hurdle"
-                    </h4>
-                    <p className="text-sm leading-relaxed">
-                      The difference between the Buy and Sell price must be
-                      larger than the total trading fees on both exchanges.
-                    </p>
-                    <div className="mt-2 text-xs bg-white/5 p-3 rounded-lg border border-white/5 text-gray-400">
-                      <strong className="text-gray-300">Example:</strong> If
-                      Binance fee is 0.1% and Coinbase fee is 0.1%, a raw price
-                      difference of 0.15% results in a{" "}
-                      <span className="text-red-400">-0.05% loss</span> and is
-                      hidden.
-                    </div>
-                  </section>
-
-                  <section>
-                    <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                      <span className="text-purple-400">2.</span> The "Threshold
-                      Filter"
-                    </h4>
-                    <p className="text-sm leading-relaxed">
-                      Even if the trade is profitable (e.g., +0.08%), it will be
-                      hidden if your threshold is set higher (e.g., 0.15%).
-                    </p>
-                    <p className="mt-2 text-xs text-purple-300/70 italic">
-                      <strong>Why?</strong> Small profits are often eaten by
-                      "slippage" (prices changing while execution happens). The
-                      threshold acts as a safety margin.
-                    </p>
-                  </section>
-
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <section className="bg-white/5 p-4 rounded-xl border border-white/5">
-                      <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                        <span className="text-green-400">3.</span> Liquidity
-                        (Depth)
-                      </h4>
-                      <p className="text-xs leading-relaxed text-gray-400">
-                        The system checks the Order Book. If volume at the
-                        profitable price is too low, the trade is ignored as it
-                        wouldn't be execution-efficient.
-                      </p>
-                    </section>
-                    <section className="bg-white/5 p-4 rounded-xl border border-white/5">
-                      <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                        <span className="text-yellow-400">4.</span> Market
-                        Efficiency
-                      </h4>
-                      <p className="text-xs leading-relaxed text-gray-400">
-                        Often, prices across exchanges are perfectly synced. If
-                        the difference is zero or near-zero, no data is
-                        displayed.
-                      </p>
-                    </section>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <button
-                  onClick={() => setShowThresholdHelp(false)}
-                  className="w-full py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl border border-white/10 transition-all font-bold"
-                >
-                  Got it
-                </button>
-              </div>
+              <h3 className="text-2xl font-bold text-white">Strategy Help</h3>
             </div>
+            <div className="space-y-4 text-sm text-gray-400">
+              <p>
+                <strong className="text-white">Smart Mode:</strong> Dynamic
+                threshold adjustment.
+              </p>
+              <p>
+                <strong className="text-white">Manual:</strong> Fixed minimum
+                profit requirement.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowThresholdHelp(false)}
+              className="mt-8 w-full py-3 bg-blue-500 text-white font-bold rounded-xl shadow-lg"
+            >
+              Understood
+            </button>
           </div>
         </div>
       )}
 
-      {/* Fee Mode Help Modal */}
       {showFeeModeHelp && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div
-            className="glass max-w-2xl w-full rounded-2xl border border-white/10 shadow-2xl animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 md:p-8">
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-green-500/20 text-green-400">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="text-2xl font-bold text-white">
-                    Fee Calculation Modes
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowFeeModeHelp(false)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="glass max-w-lg w-full rounded-2xl border border-white/10 shadow-2xl p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400">
+                🛡️
               </div>
-
-              <div className="space-y-6 text-gray-300">
-                <p className="bg-green-500/10 border-l-4 border-green-500 p-4 rounded-r-lg italic text-green-100/90 text-sm leading-relaxed">
-                  In crypto trading, you pay different fees depending on how you
-                  trade.
-                </p>
-
-                <div className="grid gap-6">
-                  <section className="glass p-4 rounded-xl border border-white/5">
-                    <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                      <span className="text-green-400">🛡️</span> Taker
-                      (Pessimistic/Safe)
-                    </h4>
-                    <p className="text-sm leading-relaxed text-gray-400">
-                      You use a{" "}
-                      <strong className="text-gray-300">Market Order</strong> to
-                      buy or sell immediately. These fees are higher (e.g.,
-                      0.1%).
-                    </p>
-                    <p className="mt-2 text-xs text-gray-500 italic">
-                      By defaulting to this, the bot only shows you trades that
-                      are profitable even after paying these high fees. It's
-                      "pessimistic" because it assumes the most expensive
-                      scenario.
-                    </p>
-                  </section>
-
-                  <section className="glass p-4 rounded-xl border border-white/5">
-                    <h4 className="text-white font-bold mb-2 flex items-center gap-2">
-                      <span className="text-orange-400">⚔️</span> Maker
-                      (Optimistic/Aggressive)
-                    </h4>
-                    <p className="text-sm leading-relaxed text-gray-400">
-                      You use a{" "}
-                      <strong className="text-gray-300">Limit Order</strong> and
-                      wait for the market to hit your price. These fees are much
-                      lower (e.g., 0.02%).
-                    </p>
-                    <p className="mt-2 text-xs text-gray-500 italic">
-                      This looks more profitable on paper, but you risk the
-                      price moving away before your order is filled.
-                    </p>
-                  </section>
-
-                  <div className="p-4 bg-blue-500/10 rounded-xl border border-blue-500/20 text-sm text-blue-100/80 leading-relaxed">
-                    <strong>The Toggle</strong> allows you to tell the bot:
-                    <div className="mt-2 italic">
-                      "Only show me the sure things (
-                      <span className="text-green-400">Pessimistic</span>)"
-                    </div>
-                    <div className="mt-1">or</div>
-                    <div className="mt-1 italic">
-                      "Show me everything that could be profitable if I execute
-                      perfectly (
-                      <span className="text-orange-400">Optimistic</span>)."
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <button
-                  onClick={() => setShowFeeModeHelp(false)}
-                  className="w-full py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl border border-white/10 transition-all uppercase tracking-widest text-xs"
-                >
-                  Understood
-                </button>
-              </div>
+              <h3 className="text-2xl font-bold text-white">Fee Safety</h3>
             </div>
+            <div className="space-y-4 text-sm text-gray-400">
+              <p>
+                <strong className="text-white">Taker:</strong> Safety first.
+              </p>
+              <p>
+                <strong className="text-white">Maker:</strong> Max profit, high
+                risk.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowFeeModeHelp(false)}
+              className="mt-8 w-full py-3 bg-blue-500 text-white font-bold rounded-xl shadow-lg"
+            >
+              Understood
+            </button>
           </div>
         </div>
       )}

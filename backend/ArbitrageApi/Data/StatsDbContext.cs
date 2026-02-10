@@ -38,6 +38,13 @@ public class StatsDbContext : DbContext
             entity.Property(t => t.Price).HasColumnType("decimal(18,8)");
             entity.Property(t => t.Fee).HasColumnType("decimal(18,8)");
             entity.Property(t => t.Profit).HasColumnType("decimal(18,8)");
+
+            // PnL Fields
+            entity.Property(t => t.RealizedProfit).HasColumnType("decimal(18,8)");
+            entity.Property(t => t.TotalFees).HasColumnType("decimal(18,8)");
+            entity.Property(t => t.BuyCost).HasColumnType("decimal(18,8)");
+            entity.Property(t => t.SellProceeds).HasColumnType("decimal(18,8)");
+
             entity.Property(t => t.Timestamp).IsRequired();
         });
 

@@ -34,33 +34,57 @@ public class StatsAggregator : IStatsAggregator
         foreach (var (category, key) in metricKeys)
         {
             var metricId = $"{category}:{key}";
-            var metric = await dbContext.AggregatedMetrics.FirstOrDefaultAsync(m => m.Id == metricId);
-
-            if (metric == null)
+            
+            // Retry logic to handle concurrency conflicts
+            const int maxRetries = 5;
+            for (int attempt = 0; attempt < maxRetries; attempt++)
             {
-                metric = new AggregatedMetric
+                try
                 {
-                    Id = metricId,
-                    Category = category,
-                    MetricKey = key,
-                    EventCount = 1,
-                    SumSpread = spreadPercent,
-                    MaxSpread = spreadPercent,
-                    SumDepth = avgDepth,
-                    LastUpdated = DateTime.UtcNow
-                };
-                dbContext.AggregatedMetrics.Add(metric);
-            }
-            else
-            {
-                metric.EventCount++;
-                metric.SumSpread += spreadPercent;
-                metric.SumDepth += avgDepth;
-                metric.LastUpdated = DateTime.UtcNow;
+                    // Reload metric on each retry to get latest version
+                    var metric = await dbContext.AggregatedMetrics.FirstOrDefaultAsync(m => m.Id == metricId);
 
-                if (spreadPercent > metric.MaxSpread)
+                    if (metric == null)
+                    {
+                        metric = new AggregatedMetric
+                        {
+                            Id = metricId,
+                            Category = category,
+                            MetricKey = key,
+                            EventCount = 1,
+                            SumSpread = spreadPercent,
+                            MaxSpread = spreadPercent,
+                            SumDepth = avgDepth,
+                            LastUpdated = DateTime.UtcNow
+                        };
+                        dbContext.AggregatedMetrics.Add(metric);
+                    }
+                    else
+                    {
+                        metric.EventCount++;
+                        metric.SumSpread += spreadPercent;
+                        metric.SumDepth += avgDepth;
+                        metric.LastUpdated = DateTime.UtcNow;
+
+                        if (spreadPercent > metric.MaxSpread)
+                        {
+                            metric.MaxSpread = spreadPercent;
+                        }
+                    }
+                    
+                    await dbContext.SaveChangesAsync();
+                    break; // Success, exit retry loop
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < maxRetries - 1)
                 {
-                    metric.MaxSpread = spreadPercent;
+                    // Detach all tracked entities to avoid conflicts on retry
+                    foreach (var entry in dbContext.ChangeTracker.Entries())
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                    
+                    // Wait a bit before retrying (exponential backoff)
+                    await Task.Delay(10 * (int)Math.Pow(2, attempt));
                 }
             }
         }

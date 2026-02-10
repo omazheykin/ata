@@ -108,35 +108,35 @@ public class OKXClient : IExchangeClient
         _logger.LogInformation("OKX mode switched to {Mode}", enabled ? "Sandbox" : "Real");
     }
 
-    // Order placement methods - not yet implemented
+    // Order placement methods
     public Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity)
     {
-        throw new NotImplementedException("OKX market buy orders not yet implemented");
+        return _currentState.PlaceMarketBuyOrderAsync(symbol, quantity);
     }
 
     public Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity)
     {
-        throw new NotImplementedException("OKX market sell orders not yet implemented");
+        return _currentState.PlaceMarketSellOrderAsync(symbol, quantity);
     }
 
     public Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price)
     {
-        throw new NotImplementedException("OKX limit buy orders not yet implemented");
+        return _currentState.PlaceLimitBuyOrderAsync(symbol, quantity, price);
     }
 
     public Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price)
     {
-        throw new NotImplementedException("OKX limit sell orders not yet implemented");
+        return _currentState.PlaceLimitSellOrderAsync(symbol, quantity, price);
     }
 
     public Task<OrderInfo> GetOrderStatusAsync(string orderId)
     {
-        throw new NotImplementedException("OKX order status not yet implemented");
+        return _currentState.GetOrderStatusAsync(orderId);
     }
 
     public Task<bool> CancelOrderAsync(string orderId)
     {
-        throw new NotImplementedException("OKX order cancellation not yet implemented");
+        return _currentState.CancelOrderAsync(orderId);
     }
 
     public Task DepositSandboxFundsAsync(string asset, decimal amount)

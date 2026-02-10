@@ -97,8 +97,14 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         }
 
         _balances["USD"] -= totalCost;
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "").Replace("USD", "");
+        
+        // Robust asset parsing: "BTC-USD" -> "BTC", "BTCUSDT" -> "BTC"
+        var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
+        
         _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
+
+        string logResult = $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB BUY: Filled {quantity} {asset} at {price}. Cost: {totalCost}. New USD: {_balances["USD"]}\n";
+        File.AppendAllText("trade_debug.log", logResult);
 
         return new OrderResponse
         {
@@ -119,7 +125,7 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         Logger.LogInformation("SANDBOX: Placing market sell order for {Symbol}, quantity {Quantity}", symbol, quantity);
         
         var orderId = $"SANDBOX_CB_SELL_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "").Replace("USD", "");
+        var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
 
         if (!_balances.TryGetValue(asset, out var assetBalance) || assetBalance < quantity)
         {
@@ -134,6 +140,9 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         
         var totalProceeds = quantity * price;
         _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
+
+        string logResult = $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB SELL: Filled {quantity} {asset} at {price}. Proceeds: {totalProceeds}. New USD: {_balances["USD"]}\n";
+        File.AppendAllText("trade_debug.log", logResult);
 
         return new OrderResponse
         {
@@ -162,8 +171,10 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         }
 
         _balances["USD"] -= totalCost;
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "");
+        var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
         _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
+
+        File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB LIMIT BUY: {quantity} {asset} at {price}. Cost: {totalCost}\n");
 
         return new OrderResponse
         {
@@ -184,7 +195,7 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         Logger.LogInformation("SANDBOX: Placing limit sell order for {Symbol}, quantity {Quantity}, price {Price}", symbol, quantity, price);
         
         var orderId = $"SANDBOX_CB_LSELL_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-        var asset = symbol.Replace("-USD", "").Replace("USDT", "");
+        var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
 
         if (!_balances.TryGetValue(asset, out var assetBalance) || assetBalance < quantity)
         {
@@ -194,6 +205,8 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         _balances[asset] -= quantity;
         var totalProceeds = quantity * price;
         _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
+
+        File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB LIMIT SELL: {quantity} {asset} at {price}. Proceeds: {totalProceeds}\n");
 
         return new OrderResponse
         {

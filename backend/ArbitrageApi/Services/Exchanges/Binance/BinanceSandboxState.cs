@@ -84,7 +84,7 @@ public class BinanceSandboxState : BinanceBaseState
             }
 
             // Robust asset parsing
-            var asset = symbol.Replace("USDT", "").Replace("USD", "");
+            var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
 
             if (side == OrderSide.Buy)
             {
@@ -96,6 +96,8 @@ public class BinanceSandboxState : BinanceBaseState
                 }
                 _balances["USD"] -= totalCost;
                 _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
+
+                File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX BINANCE BUY: Filled {quantity} {asset} at {currentPrice}. Cost: {totalCost}. New USD: {_balances["USD"]}\n");
             }
             else
             {
@@ -107,6 +109,8 @@ public class BinanceSandboxState : BinanceBaseState
                 _balances[asset] -= quantity;
                 var totalProceeds = quantity * currentPrice;
                 _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
+
+                File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX BINANCE SELL: Filled {quantity} {asset} at {currentPrice}. Proceeds: {totalProceeds}. New USD: {_balances["USD"]}\n");
             }
 
             Logger.LogInformation("✅ SANDBOX: Order simulated successfully: {OrderId}", orderId);

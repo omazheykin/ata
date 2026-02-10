@@ -2,44 +2,41 @@ import React from "react";
 import type { Balance, Transaction } from "../types/types";
 
 interface BalancesPanelProps {
+  isExpanded?: boolean;
   balances: Record<string, Balance[]>;
   transactions: Transaction[];
-  isAutoTradeEnabled: boolean;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
   onOpenDeposit: (exchange: string) => void;
-  onToggleAutoTrade: (enabled: boolean) => void;
-  isSandboxMode: boolean;
-  onToggleSandbox: (enabled: boolean) => void;
-  executionStrategy: string;
-  onToggleStrategy: () => void;
-  useTakerFees: boolean;
-  onToggleFeeMode: (enabled: boolean) => void;
-  onShowFeeHelp?: () => void;
 }
 
 const BalancesPanel: React.FC<BalancesPanelProps> = ({
+  isExpanded = true,
   balances,
   transactions,
-  isAutoTradeEnabled,
   loading,
   error,
   onRefresh,
   onOpenDeposit,
-  onToggleAutoTrade,
-  isSandboxMode,
-  onToggleSandbox,
-  executionStrategy,
-  onToggleStrategy,
-  useTakerFees,
-  onToggleFeeMode,
-  onShowFeeHelp,
 }) => {
+  const [visibleCount, setVisibleCount] = React.useState(10);
   const totalProfit = transactions.reduce((sum, tx) => sum + tx.profit, 0);
 
+  if (!isExpanded) {
+    return (
+      <div className="flex flex-col h-full bg-[#0f172a]/50 backdrop-blur-xl items-center py-4 gap-6">
+        <div className="text-xl">💰</div>
+        <div className="flex flex-col gap-4 text-xs font-black opacity-40 [writing-mode:vertical-lr] rotate-180">
+          BALANCES
+        </div>
+        <div className="mt-auto text-xl">🔄</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col min-h-0 h-full bg-[#0f172a]/50 backdrop-blur-xl border-r border-white/10 w-80">
+    <div className="flex flex-col min-h-0 h-full bg-[#0f172a]/50 backdrop-blur-xl w-full">
       <div className="p-4 border-b border-white/10">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -77,135 +74,6 @@ const BalancesPanel: React.FC<BalancesPanelProps> = ({
               />
             </svg>
           </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {/* Auto-Trade Toggle */}
-          <div className="glass p-2 rounded-xl border border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isAutoTradeEnabled ? "bg-primary-500/20 text-primary-400" : "bg-white/5 text-gray-500"}`}
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-white">Auto-Trade</p>
-              </div>
-            </div>
-            <button
-              onClick={() => onToggleAutoTrade(!isAutoTradeEnabled)}
-              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${isAutoTradeEnabled ? "bg-primary-500" : "bg-white/10"}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isAutoTradeEnabled ? "translate-x-4" : "translate-x-1"}`}
-              />
-            </button>
-          </div>
-
-          {/* Sandbox Mode Toggle */}
-          <div className="glass p-2 rounded-xl border border-amber-500/20 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isSandboxMode ? "bg-amber-500/20 text-amber-400" : "bg-white/5 text-gray-500"}`}
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                  />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-white">Sandbox</p>
-              </div>
-            </div>
-            <button
-              onClick={() => onToggleSandbox(!isSandboxMode)}
-              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${isSandboxMode ? "bg-amber-600" : "bg-white/10"}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isSandboxMode ? "translate-x-4" : "translate-x-1"}`}
-              />
-            </button>
-          </div>
-
-          {/* Strategy Toggle */}
-          <div className="glass p-2 rounded-xl border border-blue-500/20 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${executionStrategy === "Sequential" ? "bg-blue-500/20 text-blue-400" : "bg-purple-500/20 text-purple-400"}`}
-              >
-                <span className="text-xs">⚡</span>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-white">Strategy</p>
-                <p className="text-[8px] text-gray-500">{executionStrategy}</p>
-              </div>
-            </div>
-            <button
-              onClick={onToggleStrategy}
-              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${executionStrategy === "Sequential" ? "bg-blue-600" : "bg-purple-600"}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${executionStrategy !== "Sequential" ? "translate-x-4" : "translate-x-1"}`}
-              />
-            </button>
-          </div>
-
-          {/* Fee Mode Toggle */}
-          <div className="glass p-2 rounded-xl border border-primary-500/20 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${useTakerFees ? "bg-green-500/20 text-green-400" : "bg-orange-500/20 text-orange-400"}`}
-              >
-                <span className="text-xs">{useTakerFees ? "🛡️" : "⚔️"}</span>
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <p className="text-[10px] font-bold text-white">Fee Mode</p>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShowFeeHelp?.();
-                    }}
-                    className="w-3.5 h-3.5 rounded-full bg-white/5 flex items-center justify-center text-[8px] text-gray-400 hover:bg-white/10 hover:text-white transition-all border border-white/5"
-                  >
-                    ?
-                  </button>
-                </div>
-                <p className="text-[8px] text-gray-500">
-                  {useTakerFees ? "Taker" : "Maker"}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => onToggleFeeMode(!useTakerFees)}
-              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${useTakerFees ? "bg-green-600" : "bg-orange-600"}`}
-            >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${!useTakerFees ? "translate-x-4" : "translate-x-1"}`}
-              />
-            </button>
-          </div>
         </div>
       </div>
 
@@ -250,42 +118,40 @@ const BalancesPanel: React.FC<BalancesPanelProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-1.5">
+              <div className="grid grid-cols-2 gap-2">
                 {assetBalances.length === 0 ? (
-                  <p className="text-[10px] text-gray-600 italic px-1">
+                  <p className="col-span-2 text-[10px] text-gray-600 italic px-1 py-4 text-center">
                     No balances
                   </p>
                 ) : (
                   assetBalances.map((balance) => (
                     <div
                       key={balance.asset}
-                      className="glass px-2.5 py-1.5 rounded-lg border border-white/5 hover:border-white/10 transition-all group"
+                      className="glass rounded-xl px-2.5 py-2 border border-white/5 transition-all hover:bg-white/10 group cursor-default"
+                      title={`Available: ${balance.free.toLocaleString()} | Locked: ${balance.locked.toLocaleString()}`}
                     >
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-white group-hover:text-primary-400 transition-colors">
-                          {balance.asset}
-                        </span>
-                        <span className="text-[11px] font-mono text-gray-300">
-                          {balance.total.toLocaleString(undefined, {
-                            maximumFractionDigits: 4,
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-[9px] mt-0.5">
-                        <span className="text-gray-600">
-                          Avail:{" "}
-                          {balance.free.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}
-                        </span>
-                        {balance.locked > 0 && (
-                          <span className="text-orange-400/40">
-                            Lock:{" "}
-                            {balance.locked.toLocaleString(undefined, {
-                              maximumFractionDigits: 2,
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 bg-white/5 rounded-lg flex items-center justify-center text-xs group-hover:scale-110 transition-transform shadow-inner border border-white/5">
+                          {balance.asset === "ETH"
+                            ? "🔹"
+                            : balance.asset === "BTC"
+                              ? "₿"
+                              : balance.asset === "USDT"
+                                ? "💵"
+                                : balance.asset === "BNB"
+                                  ? "🔸"
+                                  : "💰"}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[8px] text-gray-500 uppercase font-black tracking-tighter leading-none mb-0.5">
+                            {balance.asset}
+                          </p>
+                          <p className="text-[11px] font-bold text-white truncate">
+                            {balance.total.toLocaleString(undefined, {
+                              maximumFractionDigits: 3,
                             })}
-                          </span>
-                        )}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ))
@@ -339,50 +205,63 @@ const BalancesPanel: React.FC<BalancesPanelProps> = ({
                 <p className="text-[10px] text-gray-600">No transactions yet</p>
               </div>
             ) : (
-              transactions.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="glass p-2 rounded-lg border border-white/5 hover:border-white/10 transition-all"
-                >
-                  <div className="flex justify-between items-start mb-1">
-                    <div>
-                      <p className="text-[10px] font-bold text-white">
-                        {tx.asset}
-                      </p>
-                      <p className="text-[9px] text-gray-600">{tx.exchange}</p>
+              <>
+                {transactions.slice(0, visibleCount).map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="glass p-2 rounded-lg border border-white/5 hover:border-white/10 transition-all"
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <div>
+                        <p className="text-[10px] font-bold text-white">
+                          {tx.asset}
+                        </p>
+                        <p className="text-[9px] text-gray-600">
+                          {tx.exchange}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={`text-[10px] font-bold ${tx.profit >= 0 ? "text-green-400" : "text-red-400"}`}
+                        >
+                          {tx.profit >= 0 ? "+" : ""}${tx.profit.toFixed(2)}
+                        </p>
+                        <p className="text-[9px] text-gray-700">
+                          {new Date(tx.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p
-                        className={`text-[10px] font-bold ${tx.profit >= 0 ? "text-green-400" : "text-red-400"}`}
+                    <div className="flex justify-between items-center pt-1.5 border-t border-white/5">
+                      <span
+                        className={`text-[8px] px-1 py-0.5 rounded uppercase font-bold tracking-wider ${
+                          tx.status === "Success"
+                            ? "bg-green-500/10 text-green-400"
+                            : tx.status === "Partial Fill"
+                              ? "bg-amber-500/10 text-amber-400"
+                              : "bg-red-500/10 text-red-400"
+                        }`}
                       >
-                        {tx.profit >= 0 ? "+" : ""}${tx.profit.toFixed(2)}
-                      </p>
-                      <p className="text-[9px] text-gray-700">
-                        {new Date(tx.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
+                        {tx.status}
+                      </span>
+                      <span className="text-[9px] text-gray-600">
+                        Vol: {tx.amount.toFixed(4)}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center pt-1.5 border-t border-white/5">
-                    <span
-                      className={`text-[8px] px-1 py-0.5 rounded uppercase font-bold tracking-wider ${
-                        tx.status === "Success"
-                          ? "bg-green-500/10 text-green-400"
-                          : tx.status === "Partial Fill"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : "bg-red-500/10 text-red-400"
-                      }`}
-                    >
-                      {tx.status}
-                    </span>
-                    <span className="text-[9px] text-gray-600">
-                      Vol: {tx.amount.toFixed(4)}
-                    </span>
-                  </div>
-                </div>
-              ))
+                ))}
+
+                {transactions.length > visibleCount && (
+                  <button
+                    onClick={() => setVisibleCount((prev) => prev + 10)}
+                    className="w-full py-2 mt-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all border border-white/5"
+                  >
+                    Show More ({transactions.length - visibleCount} remaining)
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

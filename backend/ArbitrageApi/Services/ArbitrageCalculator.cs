@@ -104,25 +104,18 @@ public class ArbitrageCalculator
         var grossProfitPercentage = ((execution.AvgSellPrice - execution.AvgBuyPrice) / execution.AvgBuyPrice) * 100;
         var netProfitPercentage = grossProfitPercentage - (buyFee * 100) - (sellFee * 100);
 
-        // 5. Apply Dynamic Thresholds
-        decimal threshold = minProfitThreshold ?? 0.1m;
-        if (pairThresholds != null && pairThresholds.TryGetValue(symbol, out var customThreshold))
-        {
-            threshold = customThreshold;
-        }
+        // For stats and volatility tracking, we return anything better than -1%
+        if (netProfitPercentage < -1.0m) return null;
 
-        if (netProfitPercentage < threshold) return null;
-
-        // Only log potentially profitable opportunities
-        if (netProfitPercentage >= threshold)
+        if (netProfitPercentage >= 0.01m) // Only log to console/log file if at least slightly profitable
         {
-            _logger.LogInformation("🔍 [{Mode}-OP] {Symbol} ({BuyExchange}→{SellExchange}): Net {NetProfit:F4}% (Using {FeeType} Fees: {BuyFee}/{SellFee})",
+            _logger.LogInformation("🔍 [LOG-OP] {Symbol} ({BuyExchange}→{SellExchange}): Net {NetProfit:F4}% (Using {FeeType} Fees: {BuyFee}/{SellFee})",
                 useTakerFees ? "PESSIMISTIC" : "OPTIMISTIC",
                 symbol, buyExchange, sellExchange, netProfitPercentage,
                 useTakerFees ? "Taker" : "Maker", buyFee, sellFee);
         }
 
-        if (netProfitPercentage >= threshold && execution.BuyVolumeFilled >= 0.00001m)
+        if (execution.BuyVolumeFilled >= 0.00001m)
         {
             var pair = TradingPair.CommonPairs.FirstOrDefault(p => p.Symbol == symbol);
             return new ArbitrageOpportunity

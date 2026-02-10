@@ -82,4 +82,89 @@ public class OKXSandboxState : OKXBaseState
         Logger.LogInformation("💰 SANDBOX DEPOSIT (OKX): {Amount} {Asset}", amount, asset);
         return Task.CompletedTask;
     }
+
+    // Order methods
+    public override Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity)
+    {
+        Logger.LogInformation("🧪 [Sandbox] OKX Market BUY: {Quantity} {Symbol}", quantity, symbol);
+        return Task.FromResult(new OrderResponse
+        {
+            OrderId = Guid.NewGuid().ToString(),
+            Symbol = symbol,
+            Status = Models.OrderStatus.Filled,
+            ExecutedQuantity = quantity,
+            OriginalQuantity = quantity,
+            Side = OrderSide.Buy,
+            Type = OrderType.Market,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public override Task<OrderResponse> PlaceMarketSellOrderAsync(string symbol, decimal quantity)
+    {
+        Logger.LogInformation("🧪 [Sandbox] OKX Market SELL: {Quantity} {Symbol}", quantity, symbol);
+        return Task.FromResult(new OrderResponse
+        {
+            OrderId = Guid.NewGuid().ToString(),
+            Symbol = symbol,
+            Status = Models.OrderStatus.Filled,
+            ExecutedQuantity = quantity,
+            OriginalQuantity = quantity,
+            Side = OrderSide.Sell,
+            Type = OrderType.Market,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public override Task<OrderResponse> PlaceLimitBuyOrderAsync(string symbol, decimal quantity, decimal price)
+    {
+        Logger.LogInformation("🧪 [Sandbox] OKX Limit BUY: {Quantity} {Symbol} @ {Price}", quantity, symbol, price);
+        return Task.FromResult(new OrderResponse
+        {
+            OrderId = Guid.NewGuid().ToString(),
+            Symbol = symbol,
+            Status = Models.OrderStatus.Pending,
+            ExecutedQuantity = 0,
+            OriginalQuantity = quantity,
+            Side = OrderSide.Buy,
+            Type = OrderType.Limit,
+            Price = price,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public override Task<OrderResponse> PlaceLimitSellOrderAsync(string symbol, decimal quantity, decimal price)
+    {
+        Logger.LogInformation("🧪 [Sandbox] OKX Limit SELL: {Quantity} {Symbol} @ {Price}", quantity, symbol, price);
+        return Task.FromResult(new OrderResponse
+        {
+            OrderId = Guid.NewGuid().ToString(),
+            Symbol = symbol,
+            Status = Models.OrderStatus.Pending,
+            ExecutedQuantity = 0,
+            OriginalQuantity = quantity,
+            Side = OrderSide.Sell,
+            Type = OrderType.Limit,
+            Price = price,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public override Task<OrderInfo> GetOrderStatusAsync(string orderId)
+    {
+        return Task.FromResult(new OrderInfo
+        {
+            OrderId = orderId,
+            Status = Models.OrderStatus.Filled,
+            ExecutedQuantity = 1.0m, // Mock
+            OriginalQuantity = 1.0m,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public override Task<bool> CancelOrderAsync(string orderId)
+    {
+        Logger.LogInformation("🧪 [Sandbox] OKX Cancel Order: {OrderId}", orderId);
+        return Task.FromResult(true);
+    }
 }

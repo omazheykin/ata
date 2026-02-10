@@ -130,6 +130,9 @@ namespace ArbitrageApi.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("BuyCost")
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<string>("BuyOrderId")
                         .HasColumnType("TEXT");
 
@@ -152,6 +155,9 @@ namespace ArbitrageApi.Migrations
                     b.Property<decimal>("Profit")
                         .HasColumnType("decimal(18,8)");
 
+                    b.Property<decimal>("RealizedProfit")
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<string>("RecoveryOrderId")
                         .HasColumnType("TEXT");
 
@@ -160,6 +166,9 @@ namespace ArbitrageApi.Migrations
 
                     b.Property<string>("SellOrderStatus")
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal>("SellProceeds")
+                        .HasColumnType("decimal(18,8)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -170,6 +179,9 @@ namespace ArbitrageApi.Migrations
 
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TotalFees")
+                        .HasColumnType("decimal(18,8)");
 
                     b.Property<string>("Type")
                         .IsRequired()

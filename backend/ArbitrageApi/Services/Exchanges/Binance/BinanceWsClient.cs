@@ -57,7 +57,6 @@ public class BinanceWsClient : BackgroundService, IBookProvider
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine("DEBUG: BinanceWsClient.ExecuteAsync started");
         while (!stoppingToken.IsCancellationRequested)
         {
             try

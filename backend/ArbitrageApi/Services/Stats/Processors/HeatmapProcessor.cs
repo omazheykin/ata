@@ -12,42 +12,57 @@ public class HeatmapProcessor : IEventProcessor
         var hour = arbitrageEvent.Timestamp.Hour;
         var cellId = $"{day.Substring(0, 3)}-{hour:D2}";
 
-        var cell = await dbContext.HeatmapCells.FirstOrDefaultAsync(c => c.Id == cellId);
+        // Retry logic to handle concurrency conflicts
+        const int maxRetries = 5;
+        for (int attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                // Reload the cell from database on each retry to get latest version
+                var cell = await dbContext.HeatmapCells.FirstOrDefaultAsync(c => c.Id == cellId);
 
-        if (cell == null)
-        {
-            cell = new HeatmapCell
-            {
-                Id = cellId,
-                Day = day.Substring(0, 3),
-                Hour = hour,
-                EventCount = 1,
-                AvgSpread = arbitrageEvent.Spread * 100,
-                MaxSpread = arbitrageEvent.Spread * 100,
-                DirectionBias = arbitrageEvent.Direction
-                // Volatility will be handled by a periodic background job or a simpler rolling logic
-            };
-            dbContext.HeatmapCells.Add(cell);
-        }
-        else
-        {
-            // Incremental Average: (OldAvg * OldCount + NewVal) / (NewCount)
-            // Stored values are already percentages (e.g. 0.57), event.Spread is raw (e.g. 0.0057)
-            var spreadPercent = arbitrageEvent.Spread * 100;
-            
-            cell.AvgSpread = (cell.AvgSpread * cell.EventCount + spreadPercent) / (cell.EventCount + 1);
-            cell.EventCount++;
-            
-            if (spreadPercent > cell.MaxSpread)
-            {
-                cell.MaxSpread = spreadPercent;
+                if (cell == null)
+                {
+                    cell = new HeatmapCell
+                    {
+                        Id = cellId,
+                        Day = day.Substring(0, 3),
+                        Hour = hour,
+                        EventCount = 1,
+                        AvgSpread = arbitrageEvent.Spread * 100,
+                        MaxSpread = arbitrageEvent.Spread * 100,
+                        DirectionBias = arbitrageEvent.Direction
+                    };
+                    dbContext.HeatmapCells.Add(cell);
+                }
+                else
+                {
+                    // Incremental Average: (OldAvg * OldCount + NewVal) / (NewCount)
+                    var spreadPercent = arbitrageEvent.Spread * 100;
+                    
+                    cell.AvgSpread = (cell.AvgSpread * cell.EventCount + spreadPercent) / (cell.EventCount + 1);
+                    cell.EventCount++;
+                    
+                    if (spreadPercent > cell.MaxSpread)
+                    {
+                        cell.MaxSpread = spreadPercent;
+                    }
+                }
+
+                await dbContext.SaveChangesAsync();
+                return; // Success, exit retry loop
             }
-
-            // Direction Bias (Simplistic: keep track of counts)
-            // For true bias, we'd need to store counts per direction in the cell.
-            // For now, let's just stick to the basic stats to satisfy the modal requirement.
+            catch (DbUpdateConcurrencyException) when (attempt < maxRetries - 1)
+            {
+                // Detach all tracked entities to avoid conflicts on retry
+                foreach (var entry in dbContext.ChangeTracker.Entries())
+                {
+                    entry.State = EntityState.Detached;
+                }
+                
+                // Wait a bit before retrying (exponential backoff)
+                await Task.Delay(10 * (int)Math.Pow(2, attempt));
+            }
         }
-
-        await dbContext.SaveChangesAsync();
     }
 }

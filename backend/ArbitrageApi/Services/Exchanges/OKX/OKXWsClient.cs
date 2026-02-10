@@ -84,15 +84,16 @@ public class OKXWsClient : BackgroundService, IBookProvider
                 while (ws.State == WebSocketState.Open && !stoppingToken.IsCancellationRequested)
                 {
                     using var ms = new MemoryStream();
-                    WebSocketReceiveResult result;
+                    WebSocketReceiveResult result = null!;
                     do
                     {
+                        if (ws.State != WebSocketState.Open) break;
                         result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), stoppingToken);
                         if (result.MessageType == WebSocketMessageType.Close) break;
                         ms.Write(buffer, 0, result.Count);
-                    } while (!result.EndOfMessage);
+                    } while (!result.EndOfMessage && ws.State == WebSocketState.Open);
 
-                    if (result.MessageType == WebSocketMessageType.Close) break;
+                    if (result == null || result.MessageType == WebSocketMessageType.Close) break;
 
                     ms.Seek(0, SeekOrigin.Begin);
                     using var reader = new StreamReader(ms, Encoding.UTF8);

@@ -57,8 +57,8 @@ const HeatmapCellModal: React.FC<HeatmapCellModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
           <div>
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <span>🔥</span> Activity Details
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <span>📋</span> Activity Details
             </h2>
             <p className="text-gray-400 text-sm mt-1">
               {day} • {timeRange}
@@ -115,106 +115,98 @@ const HeatmapCellModal: React.FC<HeatmapCellModalProps> = ({
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="glass rounded-xl p-4 border border-white/5">
-            <p className="text-gray-400 text-xs mb-1">Total Events</p>
+            <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-black opacity-40">
+              Total Events
+            </p>
             <p className="text-2xl font-bold gradient-text">
               {summary?.eventCount || events.length}
             </p>
           </div>
           <div className="glass rounded-xl p-4 border border-white/5">
-            <p className="text-gray-400 text-xs mb-1">Avg Spread</p>
+            <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-black opacity-40">
+              Avg Spread
+            </p>
             <p className="text-2xl font-bold text-blue-400">
               {summary?.avgSpread?.toFixed(3) || "0.000"}%
             </p>
           </div>
           <div className="glass rounded-xl p-4 border border-white/5">
-            <p className="text-gray-400 text-xs mb-1">Max Spread</p>
+            <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-black opacity-40">
+              Max Spread
+            </p>
             <p className="text-2xl font-bold text-green-400">
               {summary?.maxSpread?.toFixed(3) || "0.000"}%
             </p>
           </div>
         </div>
 
-        {/* Events Headers */}
-        <div className="grid grid-cols-[80px_1fr_100px_140px] gap-4 px-4 pb-2 text-xs font-semibold text-gray-400 border-b border-white/5 mb-2 mr-2">
-          <div
-            className="flex items-center gap-1 cursor-help"
-            title="Fund flow: Buy Exchange → Sell Exchange"
-          >
-            Direction <span className="opacity-50">?</span>
-          </div>
-          <div>Asset / Time</div>
-          <div
-            className="text-right flex items-center justify-end gap-1 cursor-help"
-            title="Net profit percentage (3 decimal precision)"
-          >
-            Spread <span className="opacity-50">?</span>
-          </div>
-          <div
-            className="text-right flex items-center justify-end gap-1 cursor-help"
-            title="Liquidity units: Buy Exchange Depth / Sell Exchange Depth"
-          >
-            Depth <span className="opacity-50">?</span>
-          </div>
-        </div>
-
-        {/* Events List */}
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+        {/* Events List - Standardized Table */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {events.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <p className="text-lg">No events in this time period</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {events.map((event, index) => (
-                <div
-                  key={index}
-                  className="glass rounded-lg p-4 border border-white/5 hover:bg-white/5 transition-colors"
-                >
-                  <div className="grid grid-cols-[80px_1fr_100px_140px] gap-4 items-center">
-                    <div>
-                      <p className="text-sm font-bold text-white">
-                        {event.direction}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold flex-shrink-0">
-                        {event.pair.charAt(0)}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-white font-bold truncate">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-white/5 text-gray-400 text-[10px] uppercase tracking-widest font-black sticky top-0 z-10">
+                  <th className="p-3">Time</th>
+                  <th className="p-3">Pair</th>
+                  <th className="p-3">Direction</th>
+                  <th className="p-3 text-right">Spread</th>
+                  <th className="p-3 text-right">Depth Buy</th>
+                  <th className="p-3 text-right">Depth Sell</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {events.map((event, index) => (
+                  <tr
+                    key={index}
+                    className="hover:bg-white/5 transition-colors group"
+                  >
+                    <td className="p-2 text-[10px] text-gray-400 font-mono">
+                      {new Date(event.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-[10px] text-white font-bold border border-white/10">
+                          {event.pair.charAt(0)}
+                        </div>
+                        <span className="text-xs font-bold text-white group-hover:text-primary-400 transition-colors">
                           {event.pair}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(event.timestamp).toLocaleTimeString()}
-                        </p>
+                        </span>
                       </div>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-green-400">
-                        {(event.spreadPercent ?? event.spread * 100).toFixed(3)}
-                        %
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm text-white font-mono">
-                        {event.depthBuy.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                          minimumFractionDigits: 0,
-                        })}{" "}
-                        /{" "}
-                        {event.depthSell.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                          minimumFractionDigits: 0,
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </td>
+                    <td className="p-2">
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${
+                          event.direction.includes("B→C")
+                            ? "bg-blue-500/20 text-blue-400 border border-blue-500/20"
+                            : "bg-purple-500/20 text-purple-400 border border-purple-500/20"
+                        }`}
+                      >
+                        {event.direction}
+                      </span>
+                    </td>
+                    <td
+                      className={`p-2 text-right text-xs font-bold font-mono ${
+                        (event.spreadPercent ?? event.spread) > 0
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {(event.spreadPercent ?? event.spread * 100).toFixed(3)}%
+                    </td>
+                    <td className="p-2 text-right text-xs text-gray-500 font-mono">
+                      {event.depthBuy.toLocaleString()}
+                    </td>
+                    <td className="p-2 text-right text-xs text-gray-500 font-mono">
+                      {event.depthSell.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>

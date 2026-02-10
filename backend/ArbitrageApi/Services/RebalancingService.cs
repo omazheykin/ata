@@ -241,7 +241,7 @@ public class RebalancingService : BackgroundService, IRebalancingService
         return proposal;
     }
 
-    public async Task<bool> ExecuteRebalanceAsync(RebalancingProposal proposal, CancellationToken ct = default)
+    public virtual async Task<bool> ExecuteRebalanceAsync(RebalancingProposal proposal, CancellationToken ct = default)
     {
         try
         {

@@ -11,14 +11,47 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ArbitrageApi.Migrations
 {
     [DbContext(typeof(StatsDbContext))]
-    [Migration("20260203165944_SyncSchema")]
-    partial class SyncSchema
+    [Migration("20260205224447_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
+
+            modelBuilder.Entity("ArbitrageApi.Models.AggregatedMetric", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EventCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastUpdated")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("MaxSpread")
+                        .HasColumnType("decimal(18,8)");
+
+                    b.Property<string>("MetricKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("SumDepth")
+                        .HasColumnType("decimal(18,8)");
+
+                    b.Property<decimal>("SumSpread")
+                        .HasColumnType("decimal(18,8)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AggregatedMetrics");
+                });
 
             modelBuilder.Entity("ArbitrageApi.Models.ArbitrageEvent", b =>
                 {
@@ -100,6 +133,9 @@ namespace ArbitrageApi.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("BuyCost")
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<string>("BuyOrderId")
                         .HasColumnType("TEXT");
 
@@ -122,6 +158,9 @@ namespace ArbitrageApi.Migrations
                     b.Property<decimal>("Profit")
                         .HasColumnType("decimal(18,8)");
 
+                    b.Property<decimal>("RealizedProfit")
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<string>("RecoveryOrderId")
                         .HasColumnType("TEXT");
 
@@ -130,6 +169,9 @@ namespace ArbitrageApi.Migrations
 
                     b.Property<string>("SellOrderStatus")
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal>("SellProceeds")
+                        .HasColumnType("decimal(18,8)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -140,6 +182,9 @@ namespace ArbitrageApi.Migrations
 
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TotalFees")
+                        .HasColumnType("decimal(18,8)");
 
                     b.Property<string>("Type")
                         .IsRequired()

@@ -41,25 +41,7 @@ public class ArbitrageStatsService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("📊 Arbitrage Stats Service starting...");
-
-        // Ensure database is created
-        try
-        {
-            using (var scope = _serviceProvider.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
-                await dbContext.Database.EnsureCreatedAsync(stoppingToken);
-                _logger.LogInformation("✅ Database initialized successfully.");
-
-                // Phase 6: Bootstrap aggregation if missing (Delegate to Service)
-                await _bootstrapService.BootstrapAggregationAsync(dbContext, stoppingToken);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "⚠️ Could not initialize database during startup. It might be locked or inaccessible. Continuing without persistence...");
-        }
+        _logger.LogInformation("📉 Arbitrage Stats Service started (Monitoring channels)");
 
         var eventsTask = ProcessEventsAsync(stoppingToken);
         var transactionsTask = ProcessTransactionsAsync(stoppingToken);

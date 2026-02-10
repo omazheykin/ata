@@ -192,8 +192,9 @@ public class ArbitrageDetectionService : BackgroundService
 
     private async Task ProcessOpportunityAsync(ArbitrageOpportunity opportunity, string symbol, CancellationToken stoppingToken)
     {
-        // 1. Statistics tracking
-        if (opportunity.ProfitPercentage > 0 && opportunity.ProfitPercentage <= 10.0m)
+        // 1. Statistics tracking (Volatility & Spread)
+        // Log even slightly negative spreads to show market activity on the heatmap
+        if (opportunity.ProfitPercentage > -0.5m && opportunity.ProfitPercentage <= 10.0m)
         {
             await _channelProvider.EventChannel.Writer.WriteAsync(new ArbitrageEvent
             {
@@ -201,7 +202,7 @@ public class ArbitrageDetectionService : BackgroundService
                 Pair = symbol,
                 Direction = $"{opportunity.BuyExchange.Substring(0, 1)}→{opportunity.SellExchange.Substring(0, 1)}",
                 Spread = opportunity.ProfitPercentage / 100,
-                SpreadPercent = opportunity.ProfitPercentage, // Initialize directly to avoid race conditions if normalization lags
+                SpreadPercent = opportunity.ProfitPercentage,
                 DepthBuy = opportunity.BuyDepth,
                 DepthSell = opportunity.SellDepth,
                 Timestamp = DateTime.UtcNow
@@ -214,7 +215,7 @@ public class ArbitrageDetectionService : BackgroundService
         // Ensure strictly > 0 profit and meets minimum value threshold ($100)
         bool isValuableEnough = (opportunity.Volume * opportunity.BuyPrice) >= 100m;
 
-        if ((opportunity.ProfitPercentage >= _currentMinProfitThreshold || opportunity.GrossProfitPercentage >= 0.05m) 
+        if (opportunity.ProfitPercentage >= _currentMinProfitThreshold 
             && opportunity.ProfitPercentage > 0 
             && isValuableEnough)
         {

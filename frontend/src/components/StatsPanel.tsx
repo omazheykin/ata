@@ -5,6 +5,8 @@ interface StatsPanelProps {
   averageProfit: number;
   bestProfit: number;
   totalVolume: number;
+  volatilityScore?: number;
+  efficiencyScore?: number;
 }
 
 const StatsPanel: React.FC<StatsPanelProps> = ({
@@ -12,49 +14,67 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
   averageProfit,
   bestProfit,
   totalVolume,
+  volatilityScore = 0,
+  efficiencyScore = 0,
 }) => {
   const stats = [
     {
-      label: "Total Opportunities",
+      label: "Opportunities",
       value: totalOpportunities,
       icon: "📊",
-      suffix: "",
+      tip: "Total arbitrage opportunities detected this session",
     },
     {
-      label: "Average Profit",
-      value: averageProfit.toFixed(2),
+      label: "Avg Profit",
+      value: averageProfit.toFixed(2) + "%",
       icon: "💰",
-      suffix: "%",
+      tip: "Average net profit percentage across all opportunities",
     },
     {
-      label: "Best Profit",
-      value: bestProfit.toFixed(2),
-      icon: "🚀",
-      suffix: "%",
+      label: "Volatility",
+      value: (volatilityScore * 100).toFixed(1) + "%",
+      icon: "🌪️",
+      tip: "Market volatility score based on price fluctuations",
     },
     {
-      label: "Total Volume",
+      label: "Efficiency",
+      value: (efficiencyScore * 100).toFixed(1) + "%",
+      icon: "⚡",
+      tip: "System execution efficiency and success rate",
+    },
+    {
+      label: "Volume",
       value: totalVolume.toFixed(2),
       icon: "📈",
-      suffix: "",
+      tip: "Total trading volume detected (base currency)",
+    },
+    {
+      label: "Best Trade",
+      value: bestProfit.toFixed(2) + "%",
+      icon: "🚀",
+      tip: "Highest profit percentage recorded this session",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
       {stats.map((stat, index) => (
         <div
           key={index}
-          className="glass rounded-xl p-4 card-hover animate-fade-in"
-          style={{ animationDelay: `${index * 100}ms` }}
+          className="glass rounded-xl px-2 py-1.5 border border-white/5 transition-all hover:bg-white/10 group cursor-help animate-fade-in"
+          style={{ animationDelay: `${index * 50}ms` }}
+          title={stat.tip}
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-3xl">{stat.icon}</span>
-            <div className="text-right">
-              <p className="text-xs text-gray-400 mb-1">{stat.label}</p>
-              <p className="text-2xl font-bold gradient-text">
+          <div className="flex items-center gap-2">
+            <span className="text-base group-hover:scale-110 transition-transform">
+              {stat.icon}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[8px] text-gray-500 uppercase font-black tracking-tighter leading-none mb-0.5">
+                {stat.label}
+              </p>
+              <p className="text-xs font-bold text-white truncate">
                 {stat.value}
-                {stat.suffix}
               </p>
             </div>
           </div>

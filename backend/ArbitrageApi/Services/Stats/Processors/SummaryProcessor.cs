@@ -19,6 +19,5 @@ public class SummaryProcessor : IEventProcessor
     public async Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext)
     {
         await _aggregator.UpdateMetricsAsync(arbitrageEvent, dbContext);
-        await dbContext.SaveChangesAsync();
     }
 }

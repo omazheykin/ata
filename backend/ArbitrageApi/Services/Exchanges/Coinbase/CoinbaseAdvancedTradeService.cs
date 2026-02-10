@@ -454,6 +454,80 @@ namespace ArbitrageApi.Services.Exchanges.Coinbase
          return balances;
       }
 
+      public async Task<CoinbaseCreateOrderResponse?> CreateOrderAsync(CoinbaseOrderRequest request)
+      {
+         try
+         {
+            var json = JsonSerializer.Serialize(request);
+            var jwt = GenerateJwt("POST", "api.coinbase.com/api/v3/brokerage/orders");
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.coinbase.com/api/v3/brokerage/orders");
+            req.Headers.Add("Authorization", $"Bearer {jwt}");
+            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(req);
+            var content = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+               _logger.LogError("Failed to create Coinbase order: {StatusCode} - {Content}", response.StatusCode, content);
+               return new CoinbaseCreateOrderResponse { Success = false, ErrorMessage = content };
+            }
+
+            return JsonSerializer.Deserialize<CoinbaseCreateOrderResponse>(content);
+         }
+         catch (Exception ex)
+         {
+            _logger.LogError(ex, "Error calling Coinbase CreateOrder");
+            return new CoinbaseCreateOrderResponse { Success = false, ErrorMessage = ex.Message };
+         }
+      }
+
+      public async Task<CoinbaseOrderDetailsResponse?> GetOrderAsync(string orderId)
+      {
+         try
+         {
+            var path = $"/api/v3/brokerage/orders/historical/{orderId}";
+            var jwt = GenerateJwt("GET", $"api.coinbase.com{path}");
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.coinbase.com{path}");
+            req.Headers.Add("Authorization", $"Bearer {jwt}");
+
+            var response = await _httpClient.SendAsync(req);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var content = await response.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<CoinbaseOrderDetailsResponse>(content);
+         }
+         catch (Exception ex)
+         {
+            _logger.LogError(ex, "Error fetching Coinbase order {OrderId}", orderId);
+            return null;
+         }
+      }
+
+      public async Task<bool> CancelOrdersAsync(List<string> orderIds)
+      {
+         try
+         {
+            var request = new { order_ids = orderIds };
+            var json = JsonSerializer.Serialize(request);
+            var jwt = GenerateJwt("POST", "api.coinbase.com/api/v3/brokerage/orders/batch_cancel");
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.coinbase.com/api/v3/brokerage/orders/batch_cancel");
+            req.Headers.Add("Authorization", $"Bearer {jwt}");
+            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(req);
+            return response.IsSuccessStatusCode;
+         }
+         catch (Exception ex)
+         {
+            _logger.LogError(ex, "Error cancelling Coinbase orders");
+            return false;
+         }
+      }
+
       /// <summary>
       /// Gets a deposit address for a specific account UUID
       /// Uses Coinbase V2 API (authenticated with same credentials)
@@ -723,7 +797,106 @@ public class AccountsResponse
 
    [JsonPropertyName("cursor")]
    public string Cursor { get; set; } = string.Empty;
+}
 
-   [JsonPropertyName("size")]
-   public int Size { get; set; }
+/// <summary>
+/// Order Placement Models
+/// </summary>
+public class CoinbaseOrderRequest
+{
+    [JsonPropertyName("client_order_id")]
+    public string ClientOrderId { get; set; } = Guid.NewGuid().ToString();
+
+    [JsonPropertyName("product_id")]
+    public string ProductId { get; set; } = string.Empty;
+
+    [JsonPropertyName("side")]
+    public string Side { get; set; } = string.Empty; // BUY or SELL
+
+    [JsonPropertyName("order_configuration")]
+    public OrderConfiguration OrderConfiguration { get; set; } = new();
+}
+
+public class OrderConfiguration
+{
+    [JsonPropertyName("market_market_ioc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MarketIoc? MarketIoc { get; set; }
+
+    [JsonPropertyName("limit_limit_gtc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LimitGtc? LimitGtc { get; set; }
+}
+
+public class MarketIoc
+{
+    [JsonPropertyName("quote_size")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? QuoteSize { get; set; }
+
+    [JsonPropertyName("base_size")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BaseSize { get; set; }
+}
+
+public class LimitGtc
+{
+    [JsonPropertyName("base_size")]
+    public string BaseSize { get; set; } = string.Empty;
+
+    [JsonPropertyName("limit_price")]
+    public string LimitPrice { get; set; } = string.Empty;
+
+    [JsonPropertyName("post_only")]
+    public bool PostOnly { get; set; } = false;
+}
+
+public class CoinbaseCreateOrderResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("order_id")]
+    public string? OrderId { get; set; }
+
+    [JsonPropertyName("error_response")]
+    public CoinbaseErrorResponse? ErrorResponse { get; set; }
+
+    [JsonIgnore]
+    public string? ErrorMessage { get; set; }
+}
+
+public class CoinbaseErrorResponse
+{
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
+public class CoinbaseOrderDetailsResponse
+{
+    [JsonPropertyName("order")]
+    public CoinbaseOrder? Order { get; set; }
+}
+
+public class CoinbaseOrder
+{
+    [JsonPropertyName("order_id")]
+    public string? OrderId { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("side")]
+    public string? Side { get; set; }
+
+    [JsonPropertyName("product_id")]
+    public string? ProductId { get; set; }
+
+    [JsonPropertyName("filled_size")]
+    public string? FilledSize { get; set; }
+
+    [JsonPropertyName("avg_filled_price")]
+    public string? AvgFilledPrice { get; set; }
 }

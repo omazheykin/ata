@@ -38,11 +38,7 @@ const PriceComparisonChart: React.FC<PriceComparisonChartProps> = ({
   }, [data]);
 
   if (!data) {
-    return (
-      <div className="glass rounded-xl p-6 h-[200px] flex items-center justify-center text-white/40 italic text-sm">
-        Waiting for price updates...
-      </div>
-    );
+    return null;
   }
 
   // Calculate spread between min and max for the label

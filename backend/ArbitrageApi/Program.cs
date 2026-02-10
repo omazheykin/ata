@@ -141,6 +141,38 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Safety
 
 var app = builder.Build();
 
+// Database Initialization (Critical Path)
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var dbContext = services.GetRequiredService<StatsDbContext>();
+        var bootstrapService = services.GetRequiredService<StatsBootstrapService>();
+
+        logger.LogInformation("🔄 Initializing database...");
+        await dbContext.Database.MigrateAsync();
+        logger.LogInformation("✅ Database schema is up to date.");
+
+        // Check if we need to bootstrap AggregatedMetrics or HeatmapCells
+        if (!await dbContext.AggregatedMetrics.AnyAsync() || !await dbContext.HeatmapCells.AnyAsync())
+        {
+            logger.LogInformation("📊 Database tables empty. Starting bootstrap process...");
+            await bootstrapService.BootstrapAggregationAsync(dbContext, CancellationToken.None);
+        }
+        else
+        {
+            logger.LogInformation("📊 Statistics already initialized. Skipping bootstrap.");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogCritical(ex, "❌ Fatal error during database initialization. Application cannot start safely.");
+        throw;
+    }
+}
+
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
