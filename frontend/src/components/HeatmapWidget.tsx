@@ -151,7 +151,7 @@ const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
   if (!stats) return null;
 
   return (
-    <div className="glass rounded-xl p-4 border border-white/5 h-full flex flex-col">
+    <div className="w-full h-full flex flex-col">
       <div className="flex justify-between items-center mb-3">
         <div className="flex items-center gap-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
