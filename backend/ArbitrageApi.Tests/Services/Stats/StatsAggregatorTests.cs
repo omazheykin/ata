@@ -106,6 +106,7 @@ public class StatsAggregatorTests
 
         // Assert
         var pairMetric = await dbContext.AggregatedMetrics.FindAsync("Pair:BTCUSDT");
+        Assert.NotNull(pairMetric);
         Assert.Equal(2, pairMetric.EventCount);
         Assert.Equal(3.0m, pairMetric.SumSpread); // 1% + 2%
         Assert.Equal(2.0m, pairMetric.MaxSpread);
