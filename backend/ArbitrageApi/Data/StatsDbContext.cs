@@ -27,6 +27,10 @@ public class StatsDbContext : DbContext
             entity.Property(e => e.DepthBuy).HasColumnType("decimal(18,8)");
             entity.Property(e => e.DepthSell).HasColumnType("decimal(18,8)");
             entity.Property(e => e.Timestamp).IsRequired();
+
+            entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => e.Pair);
+            entity.HasIndex(e => new { e.DayOfWeek, e.Hour, e.Timestamp });
         });
 
         modelBuilder.Entity<Transaction>(entity =>

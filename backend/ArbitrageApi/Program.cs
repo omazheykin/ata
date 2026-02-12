@@ -110,19 +110,34 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ArbitrageApi.Servi
 builder.Services.AddSingleton<ArbitrageApi.Configuration.PairsConfigRoot>(sp =>
 {
     var config = new ArbitrageApi.Configuration.PairsConfigRoot();
-    config.Pairs = new List<ArbitrageApi.Configuration.PairConfig>
+    var defaultThresholds = new Dictionary<string, (double Min, double Opt, double Agg)>
     {
-        new() { Symbol = "BTC", MinDepth = 0.05, OptimalDepth = 0.5, AggressiveDepth = 0.01 },
-        new() { Symbol = "ETH", MinDepth = 0.5, OptimalDepth = 5.0, AggressiveDepth = 0.1 },
-        new() { Symbol = "SOL", MinDepth = 5.0, OptimalDepth = 50.0, AggressiveDepth = 1.0 },
-        new() { Symbol = "XRP", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 },
-        new() { Symbol = "ADA", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 },
-        new() { Symbol = "DOGE", MinDepth = 1000.0, OptimalDepth = 10000.0, AggressiveDepth = 200.0 },
-        new() { Symbol = "LTC", MinDepth = 2.0, OptimalDepth = 20.0, AggressiveDepth = 0.5 },
-        new() { Symbol = "LINK", MinDepth = 10.0, OptimalDepth = 100.0, AggressiveDepth = 2.0 },
-        new() { Symbol = "BCH", MinDepth = 1.0, OptimalDepth = 10.0, AggressiveDepth = 0.2 },
-        new() { Symbol = "XLM", MinDepth = 500.0, OptimalDepth = 5000.0, AggressiveDepth = 100.0 }
+        { "BTCUSDT", (0.05, 0.5, 0.01) },
+        { "ETHUSDT", (0.5, 5.0, 0.1) },
+        { "SOLUSDT", (5.0, 50.0, 1.0) },
+        { "XRPUSDT", (500.0, 5000.0, 100.0) },
+        { "ADAUSDT", (500.0, 5000.0, 100.0) },
+        { "DOGEUSDT", (1000.0, 10000.0, 200.0) },
+        { "LTCUSDT", (2.0, 20.0, 0.5) },
+        { "LINKUSDT", (10.0, 100.0, 2.0) },
+        { "BCHUSDT", (1.0, 10.0, 0.2) },
+        { "XLMUSDT", (500.0, 5000.0, 100.0) },
+        { "SUSDT", (1000.0, 10000.0, 200.0) }
     };
+
+    config.Pairs = TradingPair.CommonPairs.Select(p => 
+    {
+        var symbol = p.Symbol;
+        var thresholds = defaultThresholds.GetValueOrDefault(symbol, (0.5, 1.0, 0.1)); // Generic default for new pairs
+        return new ArbitrageApi.Configuration.PairConfig
+        {
+            Symbol = symbol,
+            MinDepth = thresholds.Item1,
+            OptimalDepth = thresholds.Item2,
+            AggressiveDepth = thresholds.Item3
+        };
+    }).ToList();
+
     return config;
 });
 
@@ -148,7 +163,20 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<SmartS
 // Register Stats & Calendar Services
 builder.Services.AddTransient<StatsBootstrapService>();
 builder.Services.AddSingleton<ArbitrageExportService>();
-builder.Services.AddTransient<IStatsAggregator, StatsAggregator>();
+// Register Stats Aggregators
+builder.Services.AddTransient<IStatsAggregator, HourAggregator>();
+builder.Services.AddTransient<IStatsAggregator, DayAggregator>();
+builder.Services.AddTransient<IStatsAggregator, PairAggregator>();
+builder.Services.AddTransient<IStatsAggregator, GlobalAggregator>();
+builder.Services.AddTransient<IStatsAggregator, DirectionAggregator>();
+
+// The CompositeStatsAggregator will collect all IStatsAggregators and run them.
+// It is registered last to be the primary implementation.
+builder.Services.AddTransient<IStatsAggregator>(sp => 
+{
+    var aggregators = sp.GetServices<IStatsAggregator>();
+    return new CompositeStatsAggregator(aggregators);
+});
 builder.Services.AddScoped<HistoricalAnalysisService>();
 builder.Services.AddHostedService<ArbitrageApi.Services.Stats.CalendarStatsService>();
 
@@ -249,7 +277,6 @@ app.MapHub<ArbitrageHub>("/arbitrageHub");
 Console.WriteLine("🚀 Arbitrage API Server starting with REAL exchange data...");
 Console.WriteLine("📡 SignalR Hub available at: /arbitrageHub");
 Console.WriteLine("🌐 API endpoints available at: /api/arbitrage");
-Console.WriteLine("💱 Exchanges: Binance, Coinbase");
 
 app.Run();
 

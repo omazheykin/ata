@@ -8,6 +8,7 @@ import type {
   MarketPriceUpdate,
   StatsResponse,
   ArbitrageEvent,
+  PairConfig,
 } from "../types/types";
 import { signalRService } from "../services/signalRService";
 import { apiService } from "../services/apiService";
@@ -81,6 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
   const [pairEvents, setPairEvents] = useState<ArbitrageEvent[]>([]);
   const [isEventsModalOpen, setIsEventsModalOpen] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [trackedPairs, setTrackedPairs] = useState<PairConfig[]>([]);
 
   const fetchBalances = async () => {
     try {
@@ -157,6 +159,15 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
       setIsAutoTradeEnabled(status.enabled);
     } catch (err) {
       console.error("Error fetching auto-trade status:", err);
+    }
+  };
+
+  const fetchTrackedPairs = async () => {
+    try {
+      const data = await apiService.getTrackedPairs();
+      setTrackedPairs(data);
+    } catch (err) {
+      console.error("Error fetching tracked pairs:", err);
     }
   };
 
@@ -280,6 +291,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
     fetchExecutionStrategy();
     fetchFullState();
     fetchStats();
+    fetchTrackedPairs();
 
     // Fetch initial smart strategy status
     apiService
@@ -303,7 +315,9 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
     const interval = setInterval(() => {
       fetchBalances();
       fetchTransactions();
+      fetchTrackedPairs();
     }, 5000);
+
     return () => clearInterval(interval);
   }, []);
 
@@ -479,10 +493,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               </span>
               <button
                 onClick={() => handleToggleAutoTrade(!isAutoTradeEnabled)}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${isAutoTradeEnabled ? "bg-primary-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]" : "bg-white/10"}`}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${isAutoTradeEnabled ? "bg-primary-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${isAutoTradeEnabled ? "translate-x-5" : "translate-x-1"}`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${isAutoTradeEnabled ? "translate-x-8" : "translate-x-1"}`}
                 />
               </button>
             </div>
@@ -499,10 +513,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               </span>
               <button
                 onClick={() => handleToggleSandbox(!isSandboxMode)}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${isSandboxMode ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]" : "bg-white/10"}`}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${isSandboxMode ? "bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.4)]" : "bg-white/10"}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${isSandboxMode ? "translate-x-5" : "translate-x-1"}`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${isSandboxMode ? "translate-x-8" : "translate-x-1"}`}
                 />
               </button>
             </div>
@@ -516,10 +530,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               </span>
               <button
                 onClick={handleToggleStrategy}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${executionStrategy === "Concurrent" ? "bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.3)]" : "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]"}`}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${executionStrategy === "Concurrent" ? "bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)]" : "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]"}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${executionStrategy === "Sequential" ? "translate-x-5" : "translate-x-1"}`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${executionStrategy === "Sequential" ? "translate-x-8" : "translate-x-1"}`}
                 />
               </button>
             </div>
@@ -536,10 +550,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               </span>
               <button
                 onClick={() => handleToggleFeeMode(!useTakerFees)}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${useTakerFees ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.3)]"}`}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${useTakerFees ? "bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]" : "bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]"}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${useTakerFees ? "translate-x-5" : "translate-x-1"}`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${useTakerFees ? "translate-x-8" : "translate-x-1"}`}
                 />
               </button>
             </div>
@@ -551,26 +565,31 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               <span className="text-[9px] text-gray-500 font-black uppercase">
                 Threshold
               </span>
-              <div className="flex items-center gap-1 group relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={strategyUpdate?.threshold ?? 0.1}
-                  onChange={(e) =>
-                    setStrategyUpdate((prev) =>
-                      prev
-                        ? { ...prev, threshold: parseFloat(e.target.value) }
-                        : null,
-                    )
-                  }
-                  className="w-14 bg-black/40 border border-white/10 rounded px-2 py-0.5 text-xs font-bold text-blue-400 focus:outline-none focus:border-blue-500 transition-all font-mono"
-                />
+              <div className="flex items-center bg-black/40 border border-white/10 rounded-lg group overflow-hidden focus-within:border-blue-500/50 transition-all">
+                <div className="relative flex items-center">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={strategyUpdate?.threshold ?? 0.1}
+                    onChange={(e) =>
+                      setStrategyUpdate((prev) =>
+                        prev
+                          ? { ...prev, threshold: parseFloat(e.target.value) }
+                          : null,
+                      )
+                    }
+                    className="w-12 bg-transparent px-2 py-1 text-xs font-bold text-blue-400 focus:outline-none font-mono no-spinners"
+                  />
+                  <span className="text-[10px] text-gray-500 font-black pr-2">
+                    %
+                  </span>
+                </div>
                 <button
                   onClick={handleUpdateManualThreshold}
-                  className="p-1 hover:text-blue-400 transition-colors text-xs"
+                  className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 px-2 py-1 text-[10px] font-black uppercase border-l border-white/10 transition-all hover:text-white"
                   title="Apply Manual"
                 >
-                  💾
+                  Apply
                 </button>
               </div>
             </div>
@@ -583,14 +602,14 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               </span>
               <button
                 onClick={handleToggleSmartStrategy}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all duration-300 ${
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
                   isSmartStrategy
-                    ? "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                    ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.6)]"
                     : "bg-white/10"
                 }`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${isSmartStrategy ? "translate-x-5" : "translate-x-1"}`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${isSmartStrategy ? "translate-x-8" : "translate-x-1"}`}
                 />
               </button>
             </div>
@@ -664,11 +683,11 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
         </div>
 
         {/* Dynamic Center & Right Columns */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-          {/* Top Row: Standardized Height (500px) */}
-          <div className="grid grid-cols-12 gap-4 h-[500px]">
+        <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0">
+          {/* Top Row: Main focus (Takes remaining space) */}
+          <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
             {/* Center Col: Insights & Monitor */}
-            <div className="col-span-12 lg:col-span-8 flex flex-col gap-4 min-w-0">
+            <div className="col-span-12 lg:col-span-8 flex flex-col gap-4 min-w-0 min-h-0">
               <div className="grid grid-cols-2 gap-4 h-[140px] flex-shrink-0">
                 <div className="glass rounded-xl border border-white/5 p-3 overflow-hidden">
                   <StatsPanel
@@ -700,7 +719,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                 {viewMode === "list" ? (
                   <OpportunityList
-                    opportunities={opportunities}
+                    opportunities={opportunities.slice().reverse().slice(0, 10)}
                     onSelect={setSelectedOpportunity}
                     selectedId={selectedOpportunity?.id}
                     threshold={strategyUpdate?.threshold ?? 0.1}
@@ -741,7 +760,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
                           {opportunities
                             .slice()
                             .reverse()
-                            .slice(0, 8)
+                            .slice(0, 10)
                             .map((o) => (
                               <div
                                 className="scale-[0.98] transition-transform hover:scale-100"
@@ -762,7 +781,41 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
             </div>
 
             {/* Right Col: Asset Stats & Heatmap (Top Row) */}
-            <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 min-w-0">
+            <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 min-w-0 min-h-0">
+              {/* Tracked Pairs Coverage Section */}
+              <div className="glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 h-[180px] flex-shrink-0">
+                <h3 className="text-md font-bold text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-400">🛰️</span> Coverage
+                  </div>
+                  <span className="text-[10px] text-gray-500 font-black uppercase">
+                    {trackedPairs.length} Active Pairs
+                  </span>
+                </h3>
+                <div className="flex flex-wrap gap-2 overflow-y-auto pr-1">
+                  {trackedPairs.map((p) => (
+                    <div
+                      key={p.symbol}
+                      className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg flex items-center gap-2 hover:border-blue-500/50 transition-colors cursor-default"
+                      title={`Min: ${p.minDepth} | Opt: ${p.optimalDepth} | Agg: ${p.aggressiveDepth}`}
+                    >
+                      <span className="text-[10px] font-black text-blue-400">
+                        {p.symbol}
+                      </span>
+                      <div className="flex gap-0.5">
+                        <div className="w-1 h-1 bg-green-500 rounded-full"></div>
+                        <div className="w-1 h-1 bg-blue-500/50 rounded-full"></div>
+                      </div>
+                    </div>
+                  ))}
+                  {trackedPairs.length === 0 && (
+                    <div className="text-[10px] text-gray-500 italic">
+                      No tracked pairs configured...
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="flex-1 glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 min-h-0">
                 <h3 className="text-md font-bold text-white flex items-center gap-2">
                   <span className="text-purple-400">📊</span> Pair Activity
@@ -803,8 +856,8 @@ const Dashboard: React.FC<DashboardProps> = ({ connectionState }) => {
             </div>
           </div>
 
-          {/* Bottom Row: Standardized Height (400px) */}
-          <div className="grid grid-cols-12 gap-4 h-[350px]">
+          {/* Bottom Row: Insights & Stats (Fixed Height) */}
+          <div className="grid grid-cols-12 gap-4 h-[300px] flex-shrink-0">
             <div className="col-span-12 lg:col-span-8 glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 min-h-0">
               <HeatmapWidget
                 externalStats={detailedStats}

@@ -27,4 +27,10 @@ public class ArbitrageEvent
 
     [Required]
     public decimal SpreadPercent { get; set; }
+
+    [Required]
+    public int DayOfWeek { get; set; }
+
+    [Required]
+    public int Hour { get; set; }
 }

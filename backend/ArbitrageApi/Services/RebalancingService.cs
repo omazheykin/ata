@@ -74,13 +74,15 @@ public class RebalancingService : BackgroundService, IRebalancingService
         {
             try
             {
+                _logger.LogDebug("⚖️ [REBALANCE] Updating balances...");
                 await UpdateBalancesAndSkewsAsync(stoppingToken);
+                _logger.LogDebug("⚖️ [REBALANCE] Cycle complete. Waiting 1m...");
                 await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating rebalancing data");
+                _logger.LogCritical(ex, "❌ [REBALANCE] FATAL CRASH in update cycle");
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }

@@ -170,3 +170,9 @@ export interface AppState {
     minRebalanceSkewThreshold: number;
     walletOverrides: Record<string, Record<string, string>>;
 }
+export interface PairConfig {
+    symbol: string;
+    minDepth: number;
+    optimalDepth: number;
+    aggressiveDepth: number;
+}

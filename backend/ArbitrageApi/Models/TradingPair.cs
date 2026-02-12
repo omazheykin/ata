@@ -24,7 +24,17 @@ public class TradingPair
         new TradingPair("AVAX", "USDT"),
         new TradingPair("DOT", "USDT"),
         new TradingPair("POL", "USDT"),
-        new TradingPair("LINK", "USDT")
+        new TradingPair("LINK", "USDT"),
+        new TradingPair("DOGE", "USDT"),
+        new TradingPair("SHIB", "USDT"),
+        new TradingPair("LTC", "USDT"),
+        new TradingPair("BCH", "USDT"),
+        new TradingPair("XLM", "USDT"),
+        new TradingPair("NEAR", "USDT"),
+        new TradingPair("S", "USDT"),
+        new TradingPair("PEPE", "USDT"),
+        new TradingPair("SUI", "USDT"),
+        new TradingPair("APT", "USDT")
     };
 
     public string GetCoinbaseSymbol()

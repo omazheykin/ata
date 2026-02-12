@@ -8,7 +8,8 @@ import type {
     StrategyUpdate, 
     ArbitrageEvent,
     HeatmapCellDetail,
-    AppState
+    AppState,
+    PairConfig
 } from '../types/types';
 
 const API_BASE_URL = 'http://localhost:5000/api';
@@ -189,6 +190,10 @@ export const apiService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    async getTrackedPairs(): Promise<PairConfig[]> {
+        const response = await apiClient.get<PairConfig[]>('/pairs');
+        return response.data;
     },
 };
 

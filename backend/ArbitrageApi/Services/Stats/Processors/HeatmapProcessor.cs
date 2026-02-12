@@ -6,8 +6,9 @@ namespace ArbitrageApi.Services.Stats.Processors;
 
 public class HeatmapProcessor : IEventProcessor
 {
-    public async Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext)
+    public async Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var day = arbitrageEvent.Timestamp.DayOfWeek.ToString();
         var hour = arbitrageEvent.Timestamp.Hour;
         var cellId = $"{day.Substring(0, 3)}-{hour:D2}";
@@ -19,7 +20,7 @@ public class HeatmapProcessor : IEventProcessor
             try
             {
                 // Reload the cell from database on each retry to get latest version
-                var cell = await dbContext.HeatmapCells.FirstOrDefaultAsync(c => c.Id == cellId);
+                var cell = await dbContext.HeatmapCells.FirstOrDefaultAsync(c => c.Id == cellId, ct);
 
                 if (cell == null)
                 {
@@ -49,7 +50,7 @@ public class HeatmapProcessor : IEventProcessor
                     }
                 }
 
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesAsync(ct);
                 return; // Success, exit retry loop
             }
             catch (DbUpdateConcurrencyException) when (attempt < maxRetries - 1)
@@ -61,7 +62,7 @@ public class HeatmapProcessor : IEventProcessor
                 }
                 
                 // Wait a bit before retrying (exponential backoff)
-                await Task.Delay(10 * (int)Math.Pow(2, attempt));
+                await Task.Delay(10 * (int)Math.Pow(2, attempt), ct);
             }
         }
     }

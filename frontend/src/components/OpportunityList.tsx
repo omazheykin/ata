@@ -111,8 +111,7 @@ const OpportunityList: React.FC<OpportunityListProps> = ({
   };
 
   return (
-    <div className="glass rounded-xl overflow-hidden border border-white/5 animate-fade-in flex flex-col h-full">
-      {/* ... keeping existing header ... */}
+    <div className="glass rounded-xl overflow-hidden border border-white/5 animate-fade-in flex flex-col h-full min-h-0">
       <div className="p-4 flex justify-between items-center border-b border-white/5 flex-none sticky top-0 z-30 bg-[#0f172a]/95 backdrop-blur-md">
         <h3 className="text-white font-bold flex items-center gap-2">
           <span>Live Opportunities</span>

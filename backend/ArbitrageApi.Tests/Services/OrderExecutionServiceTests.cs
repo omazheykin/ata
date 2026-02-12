@@ -189,7 +189,9 @@ public class OrderExecutionServiceTests
             Symbol = "BTCUSD",
             BuyExchange = "Binance",
             SellExchange = "Coinbase",
-            Volume = 0.1m
+            Volume = 0.1m,
+            BuyFee = 0.001m, // 0.1%
+            SellFee = 0.001m // 0.1%
         };
 
         // Current Prices for Slippage Check

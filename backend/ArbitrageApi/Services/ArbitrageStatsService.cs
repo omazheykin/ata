@@ -62,7 +62,7 @@ public class ArbitrageStatsService : BackgroundService
                     using (var scope = _serviceProvider.CreateScope())
                     {
                         var normalizationProcessor = scope.ServiceProvider.GetRequiredService<NormalizationProcessor>();
-                        await normalizationProcessor.ProcessAsync(arbitrageEvent, scope.ServiceProvider.GetRequiredService<StatsDbContext>());
+                        await normalizationProcessor.ProcessAsync(arbitrageEvent, scope.ServiceProvider.GetRequiredService<StatsDbContext>(), stoppingToken);
                     }
 
                     // 2. Parallel Processing for independent tasks
@@ -73,8 +73,9 @@ public class ArbitrageStatsService : BackgroundService
                             using var scope = _serviceProvider.CreateScope();
                             var processor = (IEventProcessor)scope.ServiceProvider.GetRequiredService(processorType);
                             var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
-                            await processor.ProcessAsync(arbitrageEvent, dbContext);
+                            await processor.ProcessAsync(arbitrageEvent, dbContext, stoppingToken);
                         }
+                        catch (OperationCanceledException) { throw; }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, "Error in parallel processor {ProcessorType}", processorType.Name);
@@ -83,13 +84,17 @@ public class ArbitrageStatsService : BackgroundService
 
                     await Task.WhenAll(parallelTasks);
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error in event processing chain");
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Arbitrage Stats [Events] loop stopping...");
+        }
     }
 
     private async Task ProcessTransactionsAsync(CancellationToken stoppingToken)
@@ -101,19 +106,25 @@ public class ArbitrageStatsService : BackgroundService
                 _logger.LogInformation("💰 Stats Service: Received transaction for {Asset}. Saving to DB...", transaction.Asset);
                 try
                 {
-                    using var scope = _serviceProvider.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
-                    
-                    dbContext.Transactions.Add(transaction);
-                    await dbContext.SaveChangesAsync(stoppingToken);
+                    using (var scope = _serviceProvider.CreateScope())
+                    {
+                        var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
+                        
+                        dbContext.Transactions.Add(transaction);
+                        await dbContext.SaveChangesAsync(stoppingToken);
+                    }
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error saving transaction");
+                    _logger.LogError(ex, "Error saving transaction to stats DB");
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Arbitrage Stats [Transactions] loop stopping...");
+        }
     }
 
     public async Task<List<ArbitrageEvent>> GetEventsByPairAsync(string pair)
@@ -373,8 +384,30 @@ public class ArbitrageStatsService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
         
-        var cellId = $"{day}-{hour:D2}";
-        return await dbContext.HeatmapCells.FirstOrDefaultAsync(c => c.Id == cellId);
+        var targetDay = (int)ParseDayOfWeek(day);
+        
+        // Calculate the summary directly from ArbitrageEvents for 100% accuracy
+        var events = await dbContext.ArbitrageEvents
+            .Where(e => e.DayOfWeek == targetDay && e.Hour == hour)
+            .ToListAsync();
+            
+        if (!events.Any())
+        {
+            return new HeatmapCell { Id = $"{day}-{hour:D2}", Day = day, Hour = hour, EventCount = 0 };
+        }
+
+        return new HeatmapCell
+        {
+            Id = $"{day}-{hour:D2}",
+            Day = day,
+            Hour = hour,
+            EventCount = events.Count,
+            AvgSpread = events.Average(e => e.SpreadPercent),
+            MaxSpread = events.Max(e => e.SpreadPercent),
+            DirectionBias = events.GroupBy(e => e.Direction)
+                                  .OrderByDescending(g => g.Count())
+                                  .First().Key
+        };
     }
 
     public async Task<List<ArbitrageEvent>> GetCellEventsAsync(string day, int hour)
@@ -382,10 +415,10 @@ public class ArbitrageStatsService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
         
-        var targetDay = ParseDayOfWeek(day);
+        var targetDay = (int)ParseDayOfWeek(day);
         
         return await dbContext.ArbitrageEvents
-            .Where(e => (int)e.Timestamp.DayOfWeek == (int)targetDay && e.Timestamp.Hour == hour)
+            .Where(e => e.DayOfWeek == targetDay && e.Hour == hour)
             .OrderByDescending(e => e.Timestamp)
             .Take(100)
             .ToListAsync();
@@ -396,10 +429,10 @@ public class ArbitrageStatsService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<StatsDbContext>();
         
-        var targetDay = ParseDayOfWeek(day);
+        var targetDay = (int)ParseDayOfWeek(day);
         
         return await dbContext.ArbitrageEvents
-            .Where(e => (int)e.Timestamp.DayOfWeek == (int)targetDay && e.Timestamp.Hour == hour)
+            .Where(e => e.DayOfWeek == targetDay && e.Hour == hour)
             .OrderByDescending(e => e.Timestamp)
             .ToListAsync();
     }

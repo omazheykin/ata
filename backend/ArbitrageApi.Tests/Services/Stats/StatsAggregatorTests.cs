@@ -23,7 +23,15 @@ public class StatsAggregatorTests
     {
         // Arrange
         var dbContext = GetDbContext();
-        var aggregator = new StatsAggregator();
+        var aggregators = new List<IStatsAggregator>
+        {
+            new HourAggregator(),
+            new DayAggregator(),
+            new PairAggregator(),
+            new GlobalAggregator(),
+            new DirectionAggregator()
+        };
+        var aggregator = new CompositeStatsAggregator(aggregators);
         var arbitrageEvent = new ArbitrageEvent
         {
             Pair = "BTCUSDT",
@@ -35,7 +43,7 @@ public class StatsAggregatorTests
         };
 
         // Act
-        await aggregator.UpdateMetricsAsync(arbitrageEvent, dbContext);
+        await aggregator.UpdateMetricsAsync(arbitrageEvent, dbContext, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         // Assert
@@ -59,7 +67,15 @@ public class StatsAggregatorTests
     {
         // Arrange
         var dbContext = GetDbContext();
-        var aggregator = new StatsAggregator();
+        var aggregators = new List<IStatsAggregator>
+        {
+            new HourAggregator(),
+            new DayAggregator(),
+            new PairAggregator(),
+            new GlobalAggregator(),
+            new DirectionAggregator()
+        };
+        var aggregator = new CompositeStatsAggregator(aggregators);
         var ts = new DateTime(2026, 2, 2, 12, 0, 0);
         
         var event1 = new ArbitrageEvent
@@ -83,9 +99,9 @@ public class StatsAggregatorTests
         };
 
         // Act
-        await aggregator.UpdateMetricsAsync(event1, dbContext);
+        await aggregator.UpdateMetricsAsync(event1, dbContext, CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        await aggregator.UpdateMetricsAsync(event2, dbContext);
+        await aggregator.UpdateMetricsAsync(event2, dbContext, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         // Assert

@@ -30,7 +30,7 @@ public class EventProcessorTests
         var db = GetInMemoryDbContext();
 
         // Act
-        await processor.ProcessAsync(ev, db);
+        await processor.ProcessAsync(ev, db, CancellationToken.None);
 
         // Assert
         Assert.Equal(0.57m, ev.SpreadPercent);
@@ -46,7 +46,7 @@ public class EventProcessorTests
         var ev = new ArbitrageEvent { Id = Guid.NewGuid(), Pair = "BTCUSDT" };
 
         // Act
-        await processor.ProcessAsync(ev, db);
+        await processor.ProcessAsync(ev, db, CancellationToken.None);
 
         // Assert
         var saved = await db.ArbitrageEvents.FindAsync(ev.Id);
@@ -69,7 +69,7 @@ public class EventProcessorTests
         };
 
         // Act
-        await processor.ProcessAsync(ev, db);
+        await processor.ProcessAsync(ev, db, CancellationToken.None);
 
         // Assert
         var cell = await db.HeatmapCells.FirstOrDefaultAsync();
@@ -104,7 +104,7 @@ public class EventProcessorTests
         };
 
         // Act
-        await processor.ProcessAsync(ev, db);
+        await processor.ProcessAsync(ev, db, CancellationToken.None);
 
         // Assert
         var cell = await db.HeatmapCells.FindAsync("Tue-16");

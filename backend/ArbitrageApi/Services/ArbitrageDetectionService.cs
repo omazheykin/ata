@@ -135,6 +135,7 @@ public class ArbitrageDetectionService : BackgroundService
              await _calendarStats.WriteAsync(new CalendarEvent
              {
                  Pair = pair.Symbol,
+                 Direction = $"{buyEx[0]}→{sellEx[0]}",
                  Spread = spread,
                  Depth = depth,
                  TimestampUtc = now

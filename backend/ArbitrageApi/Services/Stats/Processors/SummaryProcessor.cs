@@ -16,8 +16,8 @@ public class SummaryProcessor : IEventProcessor
         _aggregator = aggregator;
     }
 
-    public async Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext)
+    public async Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext, CancellationToken ct)
     {
-        await _aggregator.UpdateMetricsAsync(arbitrageEvent, dbContext);
+        await _aggregator.UpdateMetricsAsync(arbitrageEvent, dbContext, ct);
     }
 }

@@ -5,5 +5,5 @@ namespace ArbitrageApi.Services.Stats;
 
 public interface IEventProcessor
 {
-    Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext);
+    Task ProcessAsync(ArbitrageEvent arbitrageEvent, StatsDbContext dbContext, CancellationToken ct);
 }
