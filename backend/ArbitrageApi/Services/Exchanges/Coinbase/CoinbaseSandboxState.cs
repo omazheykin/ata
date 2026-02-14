@@ -103,8 +103,6 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         
         _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
 
-        string logResult = $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB BUY: Filled {quantity} {asset} at {price}. Cost: {totalCost}. New USD: {_balances["USD"]}\n";
-        File.AppendAllText("trade_debug.log", logResult);
 
         return new OrderResponse
         {
@@ -141,8 +139,6 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         var totalProceeds = quantity * price;
         _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
 
-        string logResult = $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB SELL: Filled {quantity} {asset} at {price}. Proceeds: {totalProceeds}. New USD: {_balances["USD"]}\n";
-        File.AppendAllText("trade_debug.log", logResult);
 
         return new OrderResponse
         {
@@ -174,7 +170,6 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         var asset = symbol.Contains("-") ? symbol.Split('-')[0] : symbol.Replace("USDT", "").Replace("USD", "");
         _balances.AddOrUpdate(asset, quantity, (_, old) => old + quantity);
 
-        File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB LIMIT BUY: {quantity} {asset} at {price}. Cost: {totalCost}\n");
 
         return new OrderResponse
         {
@@ -206,7 +201,6 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         var totalProceeds = quantity * price;
         _balances.AddOrUpdate("USD", totalProceeds, (_, old) => old + totalProceeds);
 
-        File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] SANDBOX CB LIMIT SELL: {quantity} {asset} at {price}. Proceeds: {totalProceeds}\n");
 
         return new OrderResponse
         {
@@ -234,7 +228,7 @@ public class CoinbaseSandboxState : CoinbaseBaseState
         };
     }
 
-    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         // Delegate to REAL state for real order book data
         return _realState.GetOrderBookAsync(symbol, limit);

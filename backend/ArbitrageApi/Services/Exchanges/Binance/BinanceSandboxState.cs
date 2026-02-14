@@ -164,7 +164,7 @@ public class BinanceSandboxState : BinanceBaseState
         });
     }
     
-    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         Logger.LogInformation("🎮 SANDBOX: Providing REAL order book for {Symbol}", symbol);
         return _realState.GetOrderBookAsync(symbol, limit);

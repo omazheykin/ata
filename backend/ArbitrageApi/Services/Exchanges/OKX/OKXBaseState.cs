@@ -104,7 +104,7 @@ public abstract class OKXBaseState : IOKXState
 
     public abstract Task<(decimal Maker, decimal Taker)?> GetSpotFeesAsync();
     public abstract Task<Dictionary<string, ExchangePrice>> GetPricesAsync(string[] symbols);
-    public abstract Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20);
+    public abstract Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20);
     public abstract Task<List<Balance>> GetBalancesAsync();
     
     public virtual Task<decimal?> GetWithdrawalFeeAsync(string asset)

@@ -44,8 +44,6 @@ public class OrderExecutionService
     {
         try
         {
-            // [DIAGNOSTIC] Log trade attempt
-            File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] Attempting trade: {opportunity.Symbol}, Buy on {opportunity.BuyExchange}, Sell on {opportunity.SellExchange}, Vol: {opportunity.Volume}\n");
 
             _logger.LogInformation("🚀 Executing trade for {Asset} using {Strategy} strategy...", opportunity.Asset, _strategy);
 
@@ -54,7 +52,6 @@ public class OrderExecutionService
 
             if (buyClient == null || sellClient == null)
             {
-                File.AppendAllText("trade_debug.log", $"[{DateTime.UtcNow:HH:mm:ss}] ERROR: Missing exchange client. BuyEx: {opportunity.BuyExchange} ({(buyClient == null ? "NULL" : "OK")}), SellEx: {opportunity.SellExchange} ({(sellClient == null ? "NULL" : "OK")})\n");
                 _logger.LogError("Missing exchange client for trade execution.");
                 return false;
             }

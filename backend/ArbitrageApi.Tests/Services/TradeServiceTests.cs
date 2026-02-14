@@ -78,12 +78,12 @@ public class TradeServiceTests
         // Setup Book Provider Mocks
         var binanceBookMock = new Mock<IBookProvider>();
         binanceBookMock.Setup(p => p.ExchangeName).Returns("Binance");
-        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }) ));
+        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(((new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }, DateTime.UtcNow)));
         _bookProvidersList.Add(binanceBookMock.Object);
 
         var coinbaseBookMock = new Mock<IBookProvider>();
         coinbaseBookMock.Setup(p => p.ExchangeName).Returns("Coinbase");
-        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)> { (51000m, 1.0m) }, new List<(decimal, decimal)>()) ));
+        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(((new List<(decimal, decimal)> { (51000m, 1.0m) }, new List<(decimal, decimal)>(), DateTime.UtcNow)));
         _bookProvidersList.Add(coinbaseBookMock.Object);
 
         _rebalancingMock = new Mock<RebalancingService>(
@@ -243,12 +243,12 @@ public class TradeServiceTests
         // Setup specific books to result in ~0.8% profit
         var binanceBookMock = new Mock<IBookProvider>();
         binanceBookMock.Setup(p => p.ExchangeName).Returns("Binance");
-        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }) ));
+        binanceBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(((new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.0m) }, DateTime.UtcNow)));
         _bookProvidersList[0] = binanceBookMock.Object;
 
         var coinbaseBookMock = new Mock<IBookProvider>();
         coinbaseBookMock.Setup(p => p.ExchangeName).Returns("Coinbase");
-        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(( (new List<(decimal, decimal)> { (50500m, 1.0m) }, new List<(decimal, decimal)>()) ));
+        coinbaseBookMock.Setup(p => p.GetOrderBook(It.IsAny<string>())).Returns(((new List<(decimal, decimal)> { (50500m, 1.0m) }, new List<(decimal, decimal)>(), DateTime.UtcNow)));
         _bookProvidersList[1] = coinbaseBookMock.Object;
 
         var opportunity = new ArbitrageOpportunity { Symbol = "ETHUSD", BuyExchange = "Binance", SellExchange = "Coinbase", ProfitPercentage = 0.7m }; 

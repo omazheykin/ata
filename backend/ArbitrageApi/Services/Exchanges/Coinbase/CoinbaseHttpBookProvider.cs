@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using ArbitrageApi.Models;
 
@@ -8,7 +9,7 @@ public class CoinbaseHttpBookProvider : BackgroundService, IBookProvider
     private readonly ILogger<CoinbaseHttpBookProvider> _logger;
     private readonly ChannelProvider _channelProvider;
     private readonly CoinbaseClient _coinbaseClient;
-    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)> _orderBooks = new();
+    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)> _orderBooks = new();
     
     private readonly Dictionary<string, string> _symbolMapping = new();
 
@@ -34,7 +35,7 @@ public class CoinbaseHttpBookProvider : BackgroundService, IBookProvider
         }
     }
 
-    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)? GetOrderBook(string symbol)
+    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)? GetOrderBook(string symbol)
     {
         return _orderBooks.TryGetValue(symbol, out var book) ? book : null;
     }
@@ -71,7 +72,7 @@ public class CoinbaseHttpBookProvider : BackgroundService, IBookProvider
 
                     if (book != null)
                     {
-                        _orderBooks[symbol] = book.Value;
+                        _orderBooks[symbol] = (book.Value.Bids, book.Value.Asks, DateTime.UtcNow);
                         _lastUpdate = DateTime.UtcNow;
                         _lastError = null;
                         _status = "Connected";

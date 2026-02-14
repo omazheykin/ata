@@ -1,3 +1,4 @@
+using System;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -13,7 +14,7 @@ public class OKXWsClient : BackgroundService, IBookProvider
     private readonly ILogger<OKXWsClient> _logger;
     private readonly ChannelProvider _channelProvider;
     private readonly IExchangeClient _okxClient;
-    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)> _orderBooks = new();
+    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)> _orderBooks = new();
     private readonly string _wsUrl = "wss://ws.okx.com:8443/ws/v5/public";
     private readonly List<TradingPair> _pairs;
 
@@ -34,7 +35,7 @@ public class OKXWsClient : BackgroundService, IBookProvider
         _pairs = TradingPair.CommonPairs;
     }
 
-    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)? GetOrderBook(string symbol)
+    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)? GetOrderBook(string symbol)
     {
         // Internal dictionary uses standard symbol (e.g., BTCUSDT)
         return _orderBooks.TryGetValue(symbol.ToUpper(), out var book) ? book : null;
@@ -169,7 +170,7 @@ public class OKXWsClient : BackgroundService, IBookProvider
                     .Take(20)
                     .ToList();
 
-                _orderBooks[standardSymbol] = (bids, asks);
+                _orderBooks[standardSymbol] = (bids, asks, DateTime.UtcNow);
                 _lastUpdate = DateTime.UtcNow;
                 _logger.LogDebug("OKX: Updated order book for {Symbol} (Bids: {BidCount}, Asks: {AskCount})", standardSymbol, bids.Count, asks.Count);
                 

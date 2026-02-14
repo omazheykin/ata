@@ -84,24 +84,36 @@ public class ArbitrageDetectionService : BackgroundService
         // or just generic "all providers" if we are searching for ANY arb.
         // For simplicity/compliance with current requirement which implies specific pairs:
         
-        var binance = _bookProviders.FirstOrDefault(p => p.ExchangeName == "Binance")?.GetOrderBook(pair.Symbol);
-        var coinbase = _bookProviders.FirstOrDefault(p => p.ExchangeName == "Coinbase")?.GetOrderBook(pair.Symbol);
+        var binanceBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == "Binance")?.GetOrderBook(pair.Symbol);
+        var coinbaseBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == "Coinbase")?.GetOrderBook(pair.Symbol);
 
-        if (binance == null || coinbase == null) return;
+        if (binanceBook == null || coinbaseBook == null) return;
+        
+        // Staleness Check (e.g., 500ms)
+        var stalenessThreshold = TimeSpan.FromMilliseconds(500);
+        if (now - binanceBook.Value.LastUpdate > stalenessThreshold || now - coinbaseBook.Value.LastUpdate > stalenessThreshold)
+        {
+            _logger.LogWarning("Stale order book detected for {Symbol}. Binance: {BinanceAge}ms, Coinbase: {CoinbaseAge}ms. Skipping detection.", 
+                pair.Symbol, (now - binanceBook.Value.LastUpdate).TotalMilliseconds, (now - coinbaseBook.Value.LastUpdate).TotalMilliseconds);
+            return;
+        }
+
+        var binance = (binanceBook.Value.Bids, binanceBook.Value.Asks);
+        var coinbase = (coinbaseBook.Value.Bids, coinbaseBook.Value.Asks);
         
         // 2. Determine Threshold based on Time/Zone
         var threshold = _depthThresholds.GetDepthThreshold(pair.Symbol, now);
 
         // 3. Check Direction A: Binance -> Coinbase
         await DetectDirectionAsync(pair, now, 
-            binance.Value.Asks.FirstOrDefault(), 
-            coinbase.Value.Bids.FirstOrDefault(),
+            binance.Asks.FirstOrDefault(), 
+            coinbase.Bids.FirstOrDefault(),
             "Binance", "Coinbase", threshold, token);
 
         // 4. Check Direction B: Coinbase -> Binance
         await DetectDirectionAsync(pair, now, 
-            coinbase.Value.Asks.FirstOrDefault(), 
-            binance.Value.Bids.FirstOrDefault(),
+            coinbase.Asks.FirstOrDefault(), 
+            binance.Bids.FirstOrDefault(),
             "Coinbase", "Binance", threshold, token);
     }
 

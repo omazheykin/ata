@@ -8,6 +8,7 @@ public class Transaction
     public DateTime Timestamp { get; set; }
     public string Type { get; set; } = string.Empty; // "Buy", "Sell", "Arbitrage"
     public string Asset { get; set; } = string.Empty;
+    public string Pair { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Exchange { get; set; } = string.Empty;
     public string? BuyExchange { get; set; }

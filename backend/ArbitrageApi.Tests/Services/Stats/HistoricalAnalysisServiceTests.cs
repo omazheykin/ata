@@ -57,8 +57,8 @@ public class HistoricalAnalysisServiceTests
         using var db = GetInMemoryDbContext();
         db.Transactions.AddRange(new List<Transaction>
         {
-            new() { Asset = "BTC", RealizedProfit = 100m, Status = "Success", Type = "Arbitrage", Timestamp = DateTime.UtcNow },
-            new() { Asset = "ETH", RealizedProfit = 200m, Status = "Success", Type = "Arbitrage", Timestamp = DateTime.UtcNow }
+            new() { Asset = "BTC", Pair = "BTC-USDT", RealizedProfit = 100m, Status = "Success", Type = "Arbitrage", Timestamp = DateTime.UtcNow },
+            new() { Asset = "ETH", Pair = "ETH-USDT", RealizedProfit = 200m, Status = "Success", Type = "Arbitrage", Timestamp = DateTime.UtcNow }
         });
         await db.SaveChangesAsync();
 

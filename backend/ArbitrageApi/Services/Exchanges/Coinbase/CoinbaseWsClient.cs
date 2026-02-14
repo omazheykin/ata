@@ -1,3 +1,4 @@
+using System;
 using System.Net.WebSockets;
 using System.IO;
 using System.Security.Cryptography;
@@ -16,7 +17,7 @@ public class CoinbaseWsClient : BackgroundService, IBookProvider
     private readonly IExchangeClient _coinbaseClient; // Changed from CoinbaseClient to IExchangeClient
     private readonly string _apiKey;
     private readonly string _apiSecret;
-    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)> _orderBooks = new(); // Changed to ConcurrentDictionary
+    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)> _orderBooks = new(); // Changed to ConcurrentDictionary
     private readonly string _wsUrl = "wss://advanced-trade-ws.coinbase.com";
     
     private readonly Dictionary<string, string> _symbolMapping = new();
@@ -53,7 +54,7 @@ public class CoinbaseWsClient : BackgroundService, IBookProvider
         Console.WriteLine("DEBUG: CoinbaseWsClient Constructor END");
     }
 
-    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)? GetOrderBook(string symbol)
+    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)? GetOrderBook(string symbol)
     {
         return _orderBooks.TryGetValue(symbol, out var book) ? book : null; // Removed .ToUpper()
     }
@@ -312,7 +313,7 @@ public class CoinbaseWsClient : BackgroundService, IBookProvider
                     }
                     else
                     {
-                        var currentBook = _orderBooks.TryGetValue(symbol, out var b) ? b : (Bids: new List<(decimal, decimal)>(), Asks: new List<(decimal, decimal)>());
+                        var currentBook = _orderBooks.TryGetValue(symbol, out var b) ? b : (Bids: new List<(decimal, decimal)>(), Asks: new List<(decimal, decimal)>(), LastUpdate: DateTime.MinValue);
                         bids = currentBook.Bids.ToDictionary(x => x.Item1, x => x.Item2);
                         asks = currentBook.Asks.ToDictionary(x => x.Item1, x => x.Item2);
                     }
@@ -339,7 +340,7 @@ public class CoinbaseWsClient : BackgroundService, IBookProvider
                     var sortedBids = bids.OrderByDescending(x => x.Key).Take(20).Select(x => (x.Key, x.Value)).ToList();
                     var sortedAsks = asks.OrderBy(x => x.Key).Take(20).Select(x => (x.Key, x.Value)).ToList();
 
-                    _orderBooks[symbol] = (sortedBids, sortedAsks);
+                    _orderBooks[symbol] = (sortedBids, sortedAsks, DateTime.UtcNow);
                     _lastUpdate = DateTime.UtcNow;
                     _logger.LogInformation("Coinbase: Updated order book for {Symbol}. Bids: {BidsCount}, Asks: {AsksCount}", 
                         symbol, sortedBids.Count, sortedAsks.Count);

@@ -1,3 +1,4 @@
+using System;
 using System.Net.WebSockets;
 using System.IO;
 using System.Text;
@@ -13,7 +14,7 @@ public class BinanceWsClient : BackgroundService, IBookProvider
     private readonly ILogger<BinanceWsClient> _logger;
     private readonly ChannelProvider _channelProvider;
     private readonly IExchangeClient _binanceClient; // Use existing client for fees and potentially initial book
-    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)> _orderBooks = new();
+    private readonly ConcurrentDictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)> _orderBooks = new();
     private readonly string _wsUrl = "wss://stream.binance.com:9443/stream";
     private readonly List<string> _symbols;
 
@@ -36,7 +37,7 @@ public class BinanceWsClient : BackgroundService, IBookProvider
         _symbols = TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
     }
 
-    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)? GetOrderBook(string symbol)
+    public (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)? GetOrderBook(string symbol)
     {
         return _orderBooks.TryGetValue(symbol.ToUpper(), out var book) ? book : null;
     }
@@ -142,7 +143,7 @@ public class BinanceWsClient : BackgroundService, IBookProvider
                     .Select(a => (decimal.Parse(a[0].GetString()!, System.Globalization.CultureInfo.InvariantCulture), decimal.Parse(a[1].GetString()!, System.Globalization.CultureInfo.InvariantCulture)))
                     .ToList();
 
-                _orderBooks[symbol] = (bids, asks);
+                _orderBooks[symbol] = (bids, asks, DateTime.UtcNow);
                 _lastUpdate = DateTime.UtcNow;
                 _logger.LogDebug("Binance: Updated order book for {Symbol}", symbol);
                 

@@ -118,7 +118,7 @@ public abstract class CoinbaseBaseState : IExchangeState
 
     public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
     
-    public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         try
         {
@@ -145,7 +145,7 @@ public abstract class CoinbaseBaseState : IExchangeState
 
             Logger.LogDebug("Asks processed for {Symbol} from Coinbase", apiSymbol);
 
-            return (bids, asks);
+            return (bids, asks, DateTime.UtcNow);
         }
         catch (Exception ex)
         {

@@ -66,7 +66,7 @@ public class OKXClient : IExchangeClient
         return TradingPair.CommonPairs.Select(p => p.Symbol).ToList();
     }
 
-    public Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         return _currentState.GetOrderBookAsync(symbol, limit);
     }

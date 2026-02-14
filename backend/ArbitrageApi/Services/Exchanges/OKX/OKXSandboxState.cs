@@ -46,7 +46,7 @@ public class OKXSandboxState : OKXBaseState
         return _realState.GetPricesAsync(symbols);
     }
 
-    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         // Use REAL order book for simulation accuracy
         return _realState.GetOrderBookAsync(symbol, limit);

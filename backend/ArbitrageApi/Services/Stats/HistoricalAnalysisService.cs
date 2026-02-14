@@ -48,11 +48,10 @@ public class HistoricalAnalysisService
         
         var stats = await _context.Transactions
             .Where(t => t.Type == "Arbitrage" && t.Status == "Success")
-            .GroupBy(t => t.Asset)
+            .GroupBy(t => t.Pair)
             .Select(g => new PairProfitabilityDto
             {
-                Pair = g.Key + "-USDT", // Simplification: Approximating pair name as Asset-USDT. 
-                                        // TODO: Ensure Transaction table has 'Pair' column for multi-quote support.
+                Pair = g.Key,
                 TotalProfit = g.Sum(t => t.RealizedProfit),
                 TradeCount = g.Count()
             })

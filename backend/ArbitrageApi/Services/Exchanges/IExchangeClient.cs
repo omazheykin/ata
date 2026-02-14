@@ -21,7 +21,7 @@ public interface IExchangeClient
     /// <summary>
     /// Fetches the order book (depth) for a symbol. Returns a tuple of bids and asks, each as a list of (price, quantity).
     /// </summary>
-    Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20);
+    Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20);
     
     // Order placement methods
     Task<OrderResponse> PlaceMarketBuyOrderAsync(string symbol, decimal quantity);

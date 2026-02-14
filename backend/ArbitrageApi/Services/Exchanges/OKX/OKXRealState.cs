@@ -100,7 +100,7 @@ public class OKXRealState : OKXBaseState
         return prices;
     }
 
-    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public override async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         try
         {
@@ -122,7 +122,7 @@ public class OKXRealState : OKXBaseState
             var bids = bookData.Bids.Select(b => (decimal.Parse(b[0]), decimal.Parse(b[1]))).ToList();
             var asks = bookData.Asks.Select(a => (decimal.Parse(a[0]), decimal.Parse(a[1]))).ToList();
 
-            return (bids, asks);
+            return (bids, asks, DateTime.UtcNow);
         }
         catch (Exception ex)
         {

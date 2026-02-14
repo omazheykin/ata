@@ -37,6 +37,7 @@ public class StatsDbContext : DbContext
         {
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Asset).IsRequired();
+            entity.Property(t => t.Pair).IsRequired();
             entity.Property(t => t.Exchange).IsRequired();
             entity.Property(t => t.Amount).HasColumnType("decimal(18,8)");
             entity.Property(t => t.Price).HasColumnType("decimal(18,8)");

@@ -92,10 +92,24 @@ public class TradeService : BackgroundService
                     if (state.IsSafetyKillSwitchTriggered) continue;
                     if (!_isAutoTradeEnabled) continue;
 
-                    var buyBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.BuyExchange)?.GetOrderBook(candidate.Symbol);
-                    var sellBook = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.SellExchange)?.GetOrderBook(candidate.Symbol);
+                    var buyBookResult = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.BuyExchange)?.GetOrderBook(candidate.Symbol);
+                    var sellBookResult = _bookProviders.FirstOrDefault(p => p.ExchangeName == candidate.SellExchange)?.GetOrderBook(candidate.Symbol);
 
-                    if (buyBook == null || sellBook == null) continue;
+                    if (buyBookResult == null || sellBookResult == null) continue;
+
+                    // Final Staleness Check before execution
+                    var stalenessThreshold = TimeSpan.FromMilliseconds(500);
+                    var now = DateTime.UtcNow;
+                    if (now - buyBookResult.Value.LastUpdate > stalenessThreshold || now - sellBookResult.Value.LastUpdate > stalenessThreshold)
+                    {
+                        _logger.LogWarning("Trade aborted: Stale data. {Symbol} age: {BuyEx} {BuyAge}ms, {SellEx} {SellAge}ms",
+                            candidate.Symbol, candidate.BuyExchange, (now - buyBookResult.Value.LastUpdate).TotalMilliseconds, 
+                            candidate.SellExchange, (now - sellBookResult.Value.LastUpdate).TotalMilliseconds);
+                        continue;
+                    }
+
+                    var buyBook = buyBookResult.Value;
+                    var sellBook = sellBookResult.Value;
 
                     var buyClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == candidate.BuyExchange);
                     var sellClient = _exchangeClients.FirstOrDefault(c => c.ExchangeName == candidate.SellExchange);
@@ -111,8 +125,8 @@ public class TradeService : BackgroundService
                         candidate.Symbol,
                         candidate.BuyExchange,
                         candidate.SellExchange,
-                        buyBook.Value.Asks,
-                        sellBook.Value.Bids,
+                        buyBook.Asks,
+                        sellBook.Bids,
                         buyFees,
                         sellFees,
                         state.IsSandboxMode,

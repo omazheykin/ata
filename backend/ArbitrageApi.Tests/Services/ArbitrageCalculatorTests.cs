@@ -240,4 +240,50 @@ public class ArbitrageCalculatorTests
         result.Should().NotBeNull();
         result!.Volume.Should().Be(0.06m);
     }
+
+    [Fact]
+    public void CalculateOpportunity_DustVolume_ShouldReturnNull()
+    {
+        // Arrange
+        // Very small volume: 0.000005 BTC (below 0.00001 floor)
+        var orderBooks = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>
+        {
+            { "Binance", (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 0.000005m) }) },
+            { "Coinbase", (new List<(decimal, decimal)> { (60000m, 1.0m) }, new List<(decimal, decimal)>()) }
+        };
+        var fees = new Dictionary<string, (decimal Maker, decimal Taker)>
+        {
+            { "Binance", (0m, 0m) },
+            { "Coinbase", (0m, 0m) }
+        };
+
+        // Act
+        var result = _calculator.CalculateOpportunity("BTCUSD", orderBooks, fees, true);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void CalculateOpportunity_PrecisionRounding_ShouldRoundTo8Decimals()
+    {
+        // Arrange
+        var orderBooks = new Dictionary<string, (List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)>
+        {
+            { "Binance", (new List<(decimal, decimal)>(), new List<(decimal, decimal)> { (50000m, 1.11111111999m) }) },
+            { "Coinbase", (new List<(decimal, decimal)> { (60000m, 2.0m) }, new List<(decimal, decimal)>()) }
+        };
+        var fees = new Dictionary<string, (decimal Maker, decimal Taker)>
+        {
+            { "Binance", (0m, 0m) },
+            { "Coinbase", (0m, 0m) }
+        };
+
+        // Act
+        var result = _calculator.CalculateOpportunity("BTCUSD", orderBooks, fees, true);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Volume.Should().Be(1.11111112m); // Rounded from .111111119...
+    }
 }

@@ -171,7 +171,7 @@ public abstract class BinanceBaseState : IExchangeState
     
     public abstract Task<string> WithdrawAsync(string asset, decimal amount, string address, string? network = null);
 
-    public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks)?> GetOrderBookAsync(string symbol, int limit = 20)
+    public virtual async Task<(List<(decimal Price, decimal Quantity)> Bids, List<(decimal Price, decimal Quantity)> Asks, DateTime LastUpdate)?> GetOrderBookAsync(string symbol, int limit = 20)
     {
         try
         {
@@ -181,7 +181,7 @@ public abstract class BinanceBaseState : IExchangeState
             if (response == null) return null;
             var bids = response.Bids.Select(b => (decimal.Parse(b[0], System.Globalization.CultureInfo.InvariantCulture), decimal.Parse(b[1], System.Globalization.CultureInfo.InvariantCulture))).ToList();
             var asks = response.Asks.Select(a => (decimal.Parse(a[0], System.Globalization.CultureInfo.InvariantCulture), decimal.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture))).ToList();
-            return (bids, asks);
+            return (bids, asks, DateTime.UtcNow);
         }
         catch (Exception ex)
         {

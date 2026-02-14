@@ -85,9 +85,10 @@ public class ArbitrageCalculator
 
                 var balanceLimit = Math.Min(maxVolFromUsd, maxVolFromAsset);
                 maxVolume = Math.Min(liquidityLimit, balanceLimit);
-                maxVolume = Math.Round(maxVolume, 8);
             }
         }
+
+        maxVolume = Math.Round(maxVolume, 8);
 
         if (maxVolume <= 0) return null;
 
@@ -107,7 +108,7 @@ public class ArbitrageCalculator
 
         if (netProfitPercentage >= 0.01m) // Only log to console/log file if at least slightly profitable
         {
-            _logger.LogInformation("🔍 [LOG-OP] {Symbol} ({BuyExchange}→{SellExchange}): Net {NetProfit:F4}% (Using {FeeType} Fees: {BuyFee}/{SellFee})",
+            _logger.LogInformation("🔍 [LOG-OP] [{Mode}] {Symbol} ({BuyExchange}→{SellExchange}): Net {NetProfit:F4}% (Using {FeeType} Fees: {BuyFee}/{SellFee})",
                 useTakerFees ? "PESSIMISTIC" : "OPTIMISTIC",
                 symbol, buyExchange, sellExchange, netProfitPercentage,
                 useTakerFees ? "Taker" : "Maker", buyFee, sellFee);
@@ -142,7 +143,7 @@ public class ArbitrageCalculator
                 SellFee = sellFee,
                 ProfitPercentage = Math.Round(netProfitPercentage, 4),
                 GrossProfitPercentage = Math.Round(grossProfitPercentage, 4),
-                Volume = execution.BuyVolumeFilled,
+                Volume = Math.Round(execution.BuyVolumeFilled, 8),
                 Timestamp = DateTime.UtcNow,
                 Status = "Active",
                 IsSandbox = isSandboxMode,
